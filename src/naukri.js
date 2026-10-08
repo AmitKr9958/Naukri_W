@@ -2,6 +2,25 @@ import {chromium} from 'playwright'; import {withRetry} from './retry.js';
 
 const slugify=s=>String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 
+function parseAgeHours(raw){
+  const s=String(raw||'').replace(/\s+/g,' ');
+  if(/just now|today/i.test(s))return 0;
+  let m=s.match(/(\d+)\s*(minute|min|minutes)\s*(?:ago)?/i);
+  if(m)return Number(m[1])/60;
+  m=s.match(/(\d+(?:\.\d+)?)\s*(hour|hr|hours|hrs)\s*(?:ago)?/i);
+  if(m)return Number(m[1]);
+  m=s.match(/(\d+)\s*(day|days|d)\s*(?:ago)?/i);
+  if(m)return Number(m[1])*24;
+  return null;
+}
+
+function cleanUrl(href){
+  if(!href)return null;
+  try{
+    return new URL(href,'https://www.naukri.com').href.split('#')[0];
+  }catch{return null;}
+}
+
 export async function openNaukri(c){
   const context=await chromium.launchPersistentContext(c.profileDir,{headless:c.headless,viewport:{width:1440,height:1000}});
   context.setDefaultTimeout(c.actionTimeoutMs);
@@ -22,21 +41,25 @@ export async function searchJobs(page,c){
         ? `https://www.naukri.com/${slugify(q)}-jobs-in-${slugify(loc)}?k=${encodeURIComponent(q)}&l=${encodeURIComponent(loc)}`
         : `https://www.naukri.com/${slugify(q)}-jobs?k=${encodeURIComponent(q)}`;
       await withRetry(()=>page.goto(url,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs}),{retries:c.maxRetries,delayMs:c.retryDelayMs});
-      const cards=await page.locator('article,.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').all();
+      await page.waitForTimeout(1000);
+      const cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').all();
       for(const card of cards.slice(0,50)){
         const raw=await card.innerText().catch(()=>''), anchors=await card.locator('a').all();
         let link=null;
-        for(const a of anchors){const href=await a.getAttribute('href').catch(()=>null);if(href&&/naukri\.com\/job-listings-|\/job-listings-|\/job\//i.test(href)){link=href;break}}
-        if(!link&&anchors[0]) link=await anchors[0].getAttribute('href').catch(()=>null);
-        if(!link) continue;
+        for(const a of anchors){
+          const href=await a.getAttribute('href').catch(()=>null);
+          if(href&&/job-listings-|\/job\//i.test(href)){link=href;break}
+        }
+        if(!link&&anchors[0])link=await anchors[0].getAttribute('href').catch(()=>null);
+        link=cleanUrl(link);
+        if(!link)continue;
         const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
         const title=(await card.locator('a').first().innerText().catch(()=>'' )).trim()||lines[0]||'';
-        const m=raw.match(/(\d+)\s*(minute|min|hour|hr)s?\s*ago/i);
-        if(!m) continue;
-        const ageHours=/min/i.test(m[2])?Number(m[1])/60:Number(m[1]);
-        if(ageHours>c.maxAgeHours) continue;
+        const ageHours=parseAgeHours(raw);
+        if(ageHours==null||ageHours>c.maxAgeHours)continue;
         const location=lines.find(x=>c.locations.some(l=>x.toLowerCase().includes(l.toLowerCase())))||loc;
-        out.push({title,company:lines[1]||'',location,description:raw,url:link.startsWith('http')?link:`https://www.naukri.com${link}`,ageHours});
+        const company=lines.find(x=>x!==title&&x.length>1&& !/^(save|apply|posted|\d+\s*(minute|min|hour|hr|day|days|d)\b)/i.test(x))||'';
+        out.push({title,company,location,description:raw,url:link,ageHours});
       }
     }
   }
