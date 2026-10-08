@@ -39,7 +39,9 @@ export async function analyzeJobs(c,jobs,resumeText){
           body:JSON.stringify(body)
         });
         if(!r.ok)throw new Error('AI HTTP '+r.status);
-        return r.json();
+        const text=await r.text();
+        const clean=text.replace(/^data:\s*/gm,'').replace(/\n?data:\s*\[DONE\]\s*$/,'').trim();
+        return JSON.parse(clean);
       },{retries:1,delayMs:c.retryDelayMs});
       const parsed=parseJson(data?.choices?.[0]?.message?.content||'');
       const aiFit=Math.max(0,Math.min(100,Number(parsed.fit)||0));
