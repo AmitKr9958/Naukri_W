@@ -134,23 +134,49 @@ async function findInputByPlaceholder(page,pattern){
 }
 
 async function findNaukriSearchInput(page,kind){
-  const selectors=kind==='keyword'?[
-    'input[placeholder="Enter keyword / designation / companies"]',
-    'input[aria-label="Enter keyword, designation, or companies"]',
-    'input.suggestor-input'
-  ]:[
-    'input[placeholder="Enter location"]',
-    'input[aria-label="Enter location"]',
-    'input.suggestor-input'
-  ];
-  for(const selector of selectors){
-    const inputs=await page.locator(selector).all();
+  const patterns=kind==='keyword'
+    ? /keyword|designation|companies/i
+    : /location/i;
+  const exactSelectors=kind==='keyword'
+    ? [
+        'input[placeholder="Enter keyword / designation / companies"]',
+        'input[aria-label="Enter keyword, designation, or companies"]',
+        'input.suggestor-input'
+      ]
+    : [
+        'input[placeholder="Enter location"]',
+        'input[aria-label="Enter location"]',
+        'input.suggestor-input'
+      ];
+
+  const roots=[page,...page.frames().filter(f=>f!==page.mainFrame())];
+  for(const root of roots){
+    for(const selector of exactSelectors){
+      const inputs=await root.locator(selector).all().catch(()=>[]);
+      for(const input of inputs){
+        if(!await input.isVisible().catch(()=>false))continue;
+        const placeholder=(await input.getAttribute('placeholder').catch(()=>''))||'';
+        const aria=(await input.getAttribute('aria-label').catch(()=>''))||'';
+        if(patterns.test(placeholder)||patterns.test(aria)){
+          return input;
+        }
+      }
+    }
+
+    const inputs=await root.locator('input[type="text"],input:not([type])').all().catch(()=>[]);
+    const visible=[];
     for(const input of inputs){
       if(!await input.isVisible().catch(()=>false))continue;
       const placeholder=(await input.getAttribute('placeholder').catch(()=>''))||'';
       const aria=(await input.getAttribute('aria-label').catch(()=>''))||'';
-      if(kind==='keyword'&&(/keyword|designation|companies/i.test(placeholder)||/keyword|designation|companies/i.test(aria)))return input;
-      if(kind==='location'&&(/location/i.test(placeholder)||/location/i.test(aria)))return input;
+      const name=(await input.getAttribute('name').catch(()=>''))||'';
+      visible.push({input,placeholder,aria,name});
+      if(patterns.test(placeholder)||patterns.test(aria))return input;
+    }
+
+    if(kind==='keyword'){
+      const candidate=visible.find(x=>! /experience|location/i.test(x.placeholder+' '+x.aria+' '+x.name));
+      if(candidate)return candidate.input;
     }
   }
   return null;
@@ -158,21 +184,30 @@ async function findNaukriSearchInput(page,kind){
 
 async function openSearchForm(page,c){
   await page.waitForLoadState('domcontentloaded').catch(()=>{});
-  const deadline=Date.now()+Math.min(Math.max(c.navigationTimeoutMs,10000),20000);
+  const deadline=Date.now()+Math.min(Math.max(c.navigationTimeoutMs,15000),30000);
 
   while(Date.now()<deadline){
-    let keyword=await findNaukriSearchInput(page,'keyword');
+    const keyword=await findNaukriSearchInput(page,'keyword');
     if(keyword){
       await keyword.scrollIntoViewIfNeeded().catch(()=>{});
       return keyword;
     }
 
-    const expand=await findVisible(page,['.nI-gNb-sb__expand[aria-label="Search jobs here"]','button[aria-label="Search jobs here"]']);
-    if(expand)await expand.click().catch(()=>{});
-    await page.waitForTimeout(500);
+    const expand=await findVisible(page,[
+      '.nI-gNb-sb__expand[aria-label="Search jobs here"]',
+      'button[aria-label="Search jobs here"]',
+      '[aria-label="Search jobs here"]'
+    ]);
+    if(expand)await expand.click({force:true}).catch(()=>{});
+
+    await page.waitForTimeout(750);
   }
 
-  throw new Error('Naukri search form is unavailable. The logged-in homepage did not expose the keyword search input.');
+  const inputs=await page.locator('input').evaluateAll(els=>els.map(e=>({
+    type:e.type,placeholder:e.placeholder||'',aria:e.getAttribute('aria-label')||'',name:e.name||'',
+    visible:!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length)
+  }))).catch(()=>[]);
+  throw new Error('Naukri search form is unavailable. Visible inputs: '+JSON.stringify(inputs.slice(0,12)));
 }
 
 async function fillNaukriField(field,value){
