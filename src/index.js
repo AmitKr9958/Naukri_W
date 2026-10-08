@@ -24,28 +24,27 @@ async function runOnce(){
   try{
     await ensureLoggedIn(page);
     const candidates=await searchJobs(page,config);
-    let pool=candidates
+    const unseen=candidates.filter(j=>!seen.has(j.url));
+    const scored=unseen
       .map(j=>({...j,...scoreJob(j,profile)}))
-      .filter(j=>!seen.has(j.url))
-      .sort((a,b)=>b.score-a.score)
-      .slice(0,config.maxJobsPerRun);
+      .sort((a,b)=>b.score-a.score);
+    const aiEnabled=config.aiEnabled&&config.aiConsent;
+    const pool=aiEnabled?scored.slice(0,config.aiCandidateLimit):scored.slice(0,config.maxJobsPerRun);
+    if(aiEnabled)await analyzeJobs(config,pool,resume.text);
 
-    if(config.aiEnabled&&config.aiConsent) pool=await analyzeJobs(config,pool,resume.text);
-
-    let matches=pool
-      .filter(j=>{
-        const score=j.finalScore??j.score;
-        if(config.aiEnabled&&config.aiConsent&&j.relevant===false)return false;
-        return score>=config.minMatchScore;
-      })
-      .sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
+    const ranked=pool.filter(j=>{
+      const score=j.finalScore??j.score;
+      if(aiEnabled&&j.relevant===false)return false;
+      return score>=config.minMatchScore;
+    }).sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
+    const matches=ranked.slice(0,config.maxJobsPerRun);
 
     if(matches.length)await sendTelegram(config,matches);
     // Mark jobs seen only after notification succeeds. If Telegram fails,
-    // the jobs remain eligible for the next hourly run instead of being lost.
+    // jobs remain eligible for the next hourly run instead of being lost.
     for(const j of candidates)seen.add(j.url);
     await saveSeen(seen);
-    logger.info({candidates:candidates.length,scored:pool.length,matches:matches.length,durationMs:Date.now()-start},'Run complete');
+    logger.info({candidates:candidates.length,unseen:unseen.length,aiCandidates:aiEnabled?pool.length:0,matches:matches.length,durationMs:Date.now()-start},'Run complete');
   }finally{await context.close().catch(()=>{})}
 }
 
