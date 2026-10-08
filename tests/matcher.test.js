@@ -1,1 +1,1 @@
-(Please populate this file from the local project at E:\naukri_W.)
+import test from 'node:test';import assert from 'node:assert/strict';import {buildProfile,scoreJob} from '../src/matcher.js';test('relevant Power BI job scores above threshold',()=>{const p=buildProfile('Power BI DAX SQL Power Query Microsoft Fabric 7 years experience',{roles:['Power BI Developer'],locations:['Gurgaon']});const r=scoreJob({title:'Power BI Developer',description:'Power BI DAX SQL Power Query',location:'Gurgaon',ageHours:2},p);assert.ok(r.score>=60)});
