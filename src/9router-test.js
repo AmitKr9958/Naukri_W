@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 
 const appData=process.env.APPDATA||path.join(os.homedir(),'AppData','Roaming');
 const dbPath=path.join(appData,'9router','db','data.sqlite');
-const sqlitePath=path.join(appData,'npm','node_modules','9router','runtime','node_modules','better-sqlite3');
+const sqlitePath=path.join(appData,'9router','runtime','node_modules','better-sqlite3');
 const require=createRequire(import.meta.url);
 const Database=require(sqlitePath);
 const db=new Database(dbPath,{readonly:true});
