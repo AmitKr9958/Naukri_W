@@ -11,7 +11,7 @@ const clip=s=>String(s||'').slice(0,12000);
 export function redactForAI(text){return clip(redact(text));}
 
 function parseJson(raw){
-  const cleaned=String(raw||'').replace(/json|/gi,'').trim();
+  const cleaned=String(raw||'').replace(/```json|```/gi,'').trim();
   const start=cleaned.indexOf('{');
   const end=cleaned.lastIndexOf('}');
   if(start<0||end<=start)throw new Error('AI did not return JSON');
