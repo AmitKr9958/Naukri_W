@@ -21,6 +21,8 @@ export const config={
   minMatchScore:Number(process.env.MIN_MATCH_SCORE||60),
   maxJobsPerRun:positiveInt(process.env.MAX_JOBS_PER_RUN,15),
   aiCandidateLimit:positiveInt(process.env.AI_CANDIDATE_LIMIT,30),
+  maxPagesPerSearch:positiveInt(process.env.MAX_PAGES_PER_SEARCH,5),
+  pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,1200),
   telegramToken:process.env.TELEGRAM_BOT_TOKEN||'',
   telegramChatId:process.env.TELEGRAM_CHAT_ID||'',
   aiEnabled:bool(process.env.AI_ENABLED,false),
