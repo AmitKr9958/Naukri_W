@@ -5,12 +5,19 @@ const slugify=s=>String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').repla
 function parseAgeHours(raw){
   const s=String(raw||'').replace(/\s+/g,' ');
   if(/just now|today/i.test(s))return 0;
+  if(/yesterday/i.test(s))return 24;
   let m=s.match(/(\d+)\s*(minute|min|minutes)\s*(?:ago)?/i);
   if(m)return Number(m[1])/60;
+  if(/few\s+minutes?/i.test(s))return 0.25;
   m=s.match(/(\d+(?:\.\d+)?)\s*(hour|hr|hours|hrs)\s*(?:ago)?/i);
   if(m)return Number(m[1]);
-  m=s.match(/(\d+)\s*(day|days|d)\s*(?:ago)?/i);
+  if(/few\s+hours?/i.test(s))return 3;
+  m=s.match(/(\d+(?:\.\d+)?)\s*(day|days|d)\s*(?:ago)?/i);
   if(m)return Number(m[1])*24;
+  m=s.match(/(\d+(?:\.\d+)?)\s*(week|weeks|wk|wks)\s*(?:ago)?/i);
+  if(m)return Number(m[1])*168;
+  m=s.match(/(\d+(?:\.\d+)?)\s*(month|months|mo)\s*(?:ago)?/i);
+  if(m)return Number(m[1])*720;
   return null;
 }
 
@@ -50,9 +57,10 @@ export async function searchJobs(page,c){
   const out=[];
   for(const q of c.roles.slice(0,8)){
     for(const loc of c.locations.length?c.locations:['']){
-      const url=loc
+      const base=loc
         ? `https://www.naukri.com/${slugify(q)}-jobs-in-${slugify(loc)}?k=${encodeURIComponent(q)}&l=${encodeURIComponent(loc)}`
         : `https://www.naukri.com/${slugify(q)}-jobs?k=${encodeURIComponent(q)}`;
+      const url=base+(base.includes('?')?'&':'?')+'jobAge=1&sort=date';
       await withRetry(()=>page.goto(url,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs}),{retries:c.maxRetries,delayMs:c.retryDelayMs});
       await page.waitForTimeout(1000);
       await applyFreshness(page);
