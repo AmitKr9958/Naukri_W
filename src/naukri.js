@@ -83,6 +83,9 @@ async function extractFreshCards(page, c) {
   let rejectedByFreshness = 0;
   const diagnostics = [];
   const cards = await page.locator('.cust-job-tuple,.srp-jobtuple-wrapper,[data-job-id]').all();
+  const seenCardUrls = new Set();
+  let parsedAges = [];
+
   for (const card of cards.slice(0, 50)) {
     const raw = await card.innerText().catch(() => '');
     const anchors = await card.locator('a').all();
@@ -96,7 +99,8 @@ async function extractFreshCards(page, c) {
     }
     if (!link && anchors[0]) link = await anchors[0].getAttribute('href').catch(() => null);
     link = cleanUrl(link);
-    if (!link) continue;
+    if (!link || seenCardUrls.has(link)) continue;
+    seenCardUrls.add(link);
 
     const lines = raw.split('\n').map(x => x.trim()).filter(Boolean);
     const title = (await card.locator('a').first().innerText().catch(() => '')).trim() || lines[0] || '';
@@ -109,9 +113,13 @@ async function extractFreshCards(page, c) {
     ]);
     const postedText = findPostedText(raw, preferredPosted);
     const ageHours = parseAgeHours(postedText);
+
+    if (ageHours != null) parsedAges.push(ageHours);
     if (diagnostics.length < 5) {
       diagnostics.push({title, postedText: postedText || preferredPosted || 'NOT_FOUND', ageHours});
     }
+
+    // Unknown posting age is never considered fresh.
     if (ageHours == null || ageHours > c.maxAgeHours) {
       rejectedByFreshness++;
       continue;
@@ -129,7 +137,20 @@ async function extractFreshCards(page, c) {
 
     fresh.push({title, company, location, description, url: link, ageHours, postedText});
   }
-  return {fresh, diagnostics, rejectedByFreshness};
+
+  const newestAgeHours = parsedAges.length ? Math.min(...parsedAges) : null;
+  const oldestAgeHours = parsedAges.length ? Math.max(...parsedAges) : null;
+
+  return {
+    fresh,
+    diagnostics,
+    rejectedByFreshness,
+    uniqueCards: seenCardUrls.size,
+    parsedAges,
+    newestAgeHours,
+    oldestAgeHours,
+    allParsedOlderThanMax: parsedAges.length > 0 && parsedAges.every(age => age > c.maxAgeHours)
+  };
 }
 
 function isAccessDeniedPage(title, body, url) {
@@ -465,27 +486,40 @@ async function pageWaitShort(field) {
 async function selectSortByDate(page) {
   try {
     const sort = page.getByText('Sort by:', {exact: false}).first();
-    if (await sort.count()) await sort.click().catch(() => {});
+    if (!(await sort.count())) return false;
+    await sort.click().catch(() => {});
     await page.waitForTimeout(300);
     const date = page.getByText('Date', {exact: true}).first();
-    if ((await date.count()) && (await date.isVisible().catch(() => false))) {
-      await date.click().catch(() => {});
-      await page.waitForTimeout(1000);
-    }
-  } catch {}
+    if (!((await date.count()) && (await date.isVisible().catch(() => false)))) return false;
+    await date.click().catch(() => {});
+    await page.waitForTimeout(1000);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function selectFreshnessLastDay(page) {
   try {
     const freshness = page.getByText('Freshness', {exact: true}).first();
-    if (await freshness.count()) await freshness.click().catch(() => {});
+    if (!(await freshness.count())) return false;
+    await freshness.click().catch(() => {});
     await page.waitForTimeout(300);
-    const lastDay = page.getByText('Last 1 day', {exact: true}).first();
-    if ((await lastDay.count()) && (await lastDay.isVisible().catch(() => false))) {
-      await lastDay.click().catch(() => {});
-      await page.waitForTimeout(1000);
+
+    const candidates = [
+      page.getByText('Last 1 day', {exact: true}).first(),
+      page.getByText('Last 1 Day', {exact: true}).first(),
+      page.getByText(/Last 1 day/i).first()
+    ];
+    for (const lastDay of candidates) {
+      if ((await lastDay.count()) && (await lastDay.isVisible().catch(() => false))) {
+        await lastDay.click().catch(() => {});
+        await page.waitForTimeout(1000);
+        return true;
+      }
     }
   } catch {}
+  return false;
 }
 
 async function runSearchFromHomepage(page, c, q, loc) {
@@ -544,8 +578,15 @@ async function runSearchFromHomepage(page, c, q, loc) {
     );
   }
 
-  await selectSortByDate(page);
-  await selectFreshnessLastDay(page);
+  const sortedByDate = await selectSortByDate(page);
+  const freshnessFilterApplied = await selectFreshnessLastDay(page);
+  console.info(JSON.stringify({
+    search: q,
+    location: loc || 'ALL',
+    sortedByDate,
+    freshnessFilterApplied,
+    maxAgeHours: c.maxAgeHours
+  }));
   return page.url();
 }
 
@@ -619,8 +660,11 @@ export async function searchJobs(page, c) {
             location: loc || 'ALL',
             page: pageNo,
             cards,
+            uniqueCards: extracted.uniqueCards,
             freshCards: extracted.fresh.length,
             rejectedByFreshness: extracted.rejectedByFreshness,
+            newestAgeHours: extracted.newestAgeHours,
+            oldestAgeHours: extracted.oldestAgeHours,
             maxAgeHours: c.maxAgeHours
           })
         );
@@ -630,6 +674,20 @@ export async function searchJobs(page, c) {
             seen.add(job.url);
             out.push(job);
           }
+        }
+
+        // Results are sorted newest-first when the Naukri sort control succeeds.
+        // If every parsed posting on this page is already older than the configured
+        // freshness window, later pages cannot contain a valid fresh match.
+        if (extracted.allParsedOlderThanMax) {
+          console.info(JSON.stringify({
+            search: q,
+            location: loc || 'ALL',
+            page: pageNo,
+            message: 'Stopping pagination because this page is entirely older than the freshness window.',
+            maxAgeHours: c.maxAgeHours
+          }));
+          break;
         }
 
         const next = pageNo < c.maxPagesPerSearch ? await nextPageUrl(page, url) : null;
