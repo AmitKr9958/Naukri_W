@@ -18,42 +18,52 @@ function parseJson(raw){
   return JSON.parse(cleaned.slice(start,end+1));
 }
 
+async function analyzeOne(c,job,resume){
+  const body={model:c.aiModel,messages:[
+    {role:'system',content:'You are a strict job-matching evaluator. Return valid JSON only. Judge fit against the candidate resume, not generic desirability. Do not infer private information.'},
+    {role:'user',content:JSON.stringify({
+      resume,
+      job:{title:redact(job.title),company:redact(job.company),location:redact(job.location),description:redactForAI(job.description)},
+      task:'Evaluate this job for the candidate. Return JSON: relevant (boolean), fit (0-100), roleFit (0-100), reason (one short sentence), missing (up to 3 skills). Relevant must be false for a clearly unrelated role even if transferable skills exist.'
+    })}
+  ],temperature:0.1,max_tokens:700};
+
+  const data=await withRetry(async()=>{
+    const r=await fetch(c.aiBaseUrl.replace(/\/$/,'')+'/chat/completions',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+c.aiApiKey,'Content-Type':'application/json'},
+      body:JSON.stringify(body),
+      signal:AbortSignal.timeout(c.httpTimeoutMs)
+    });
+    if(!r.ok)throw new Error('AI HTTP '+r.status);
+    const text=await r.text();
+    const clean=text.replace(/^data:\s*/gm,'').replace(/\n?data:\s*\[DONE\]\s*$/,'').trim();
+    return JSON.parse(clean);
+  },{retries:1,delayMs:c.retryDelayMs});
+
+  const message=data?.choices?.[0]?.message||{};
+  const parsed=parseJson(message.content||message.reasoning||'');
+  const aiFit=Math.max(0,Math.min(100,Number(parsed.fit)||0));
+  const roleFit=Math.max(0,Math.min(100,Number(parsed.roleFit)||0));
+  const relevant=parsed.relevant===true;
+  const finalScore=relevant?Math.round(job.score*0.4+aiFit*0.45+roleFit*0.15):Math.min(job.score,Math.round(aiFit*0.4));
+  return {...job,relevant,aiFit,roleFit,aiReason:String(parsed.reason||''),aiMissing:Array.isArray(parsed.missing)?parsed.missing.slice(0,3):[],finalScore};
+}
+
 export async function analyzeJobs(c,jobs,resumeText){
   if(!c.aiEnabled||!c.aiConsent||!jobs.length)return jobs;
   const resume=redactForAI(resumeText);
-  const results=[];
-  for(const job of jobs){
-    try{
-      const body={model:c.aiModel,messages:[
-        {role:'system',content:'You are a strict job-matching evaluator. Return valid JSON only. Judge fit against the candidate resume, not generic desirability. Do not infer private information.'},
-        {role:'user',content:JSON.stringify({
-          resume,
-          job:{title:redact(job.title),company:redact(job.company),location:redact(job.location),description:redactForAI(job.description)},
-          task:'Evaluate this job for the candidate. Return JSON: relevant (boolean), fit (0-100), roleFit (0-100), reason (one short sentence), missing (up to 3 skills). Relevant must be false for a clearly unrelated role even if transferable skills exist.'
-        })}
-      ],temperature:0.1,max_tokens:700};
-      const data=await withRetry(async()=>{
-        const r=await fetch(c.aiBaseUrl.replace(/\/$/,'')+'/chat/completions',{
-          method:'POST',
-          headers:{Authorization:'Bearer '+c.aiApiKey,'Content-Type':'application/json'},
-          body:JSON.stringify(body),
-          signal:AbortSignal.timeout(c.httpTimeoutMs)
-        });
-        if(!r.ok)throw new Error('AI HTTP '+r.status);
-        const text=await r.text();
-        const clean=text.replace(/^data:\s*/gm,'').replace(/\n?data:\s*\[DONE\]\s*$/,'').trim();
-        return JSON.parse(clean);
-      },{retries:1,delayMs:c.retryDelayMs});
-      const message=data?.choices?.[0]?.message||{};
-      const parsed=parseJson(message.content||message.reasoning||'');
-      const aiFit=Math.max(0,Math.min(100,Number(parsed.fit)||0));
-      const roleFit=Math.max(0,Math.min(100,Number(parsed.roleFit)||0));
-      const relevant=parsed.relevant===true;
-      const finalScore=relevant?Math.round(job.score*0.4+aiFit*0.45+roleFit*0.15):Math.min(job.score,Math.round(aiFit*0.4));
-      results.push({...job,relevant,aiFit,roleFit,aiReason:String(parsed.reason||''),aiMissing:Array.isArray(parsed.missing)?parsed.missing.slice(0,3):[],finalScore});
-    }catch{
-      results.push({...job,relevant:null,aiFit:null,roleFit:null,aiReason:'AI unavailable; rule-based score retained.',aiMissing:[],finalScore:job.score});
+  const results=new Array(jobs.length);
+  const concurrency=Math.min(3,jobs.length);
+  let next=0;
+  const worker=async()=>{
+    while(true){
+      const i=next++;
+      if(i>=jobs.length)return;
+      try{results[i]=await analyzeOne(c,jobs[i],resume);}
+      catch{results[i]={...jobs[i],relevant:null,aiFit:null,roleFit:null,aiReason:'AI unavailable; rule-based score retained.',aiMissing:[],finalScore:jobs[i].score};}
     }
-  }
+  };
+  await Promise.all(Array.from({length:concurrency},()=>worker()));
   return results;
 }
