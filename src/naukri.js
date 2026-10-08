@@ -19,7 +19,7 @@ export async function searchJobs(page,c){
   for(const q of c.roles.slice(0,8)){
     for(const loc of c.locations.length?c.locations:['']){
       const url=loc
-        ? `https://www.naukri.com/${slugify(q)}-jobs-in-${slugify(loc)}?experience=0`
+        ? `https://www.naukri.com/${slugify(q)}-jobs-in-${slugify(loc)}?k=${encodeURIComponent(q)}&l=${encodeURIComponent(loc)}`
         : `https://www.naukri.com/${slugify(q)}-jobs?k=${encodeURIComponent(q)}`;
       await withRetry(()=>page.goto(url,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs}),{retries:c.maxRetries,delayMs:c.retryDelayMs});
       const cards=await page.locator('article,.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').all();
@@ -31,7 +31,7 @@ export async function searchJobs(page,c){
         if(!link) continue;
         const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
         const title=(await card.locator('a').first().innerText().catch(()=>'' )).trim()||lines[0]||'';
-        const m=raw.match(/(\\d+)\\s*(minute|min|hour|hr)s?\\s*ago/i);
+        const m=raw.match(/(\d+)\s*(minute|min|hour|hr)s?\s*ago/i);
         if(!m) continue;
         const ageHours=/min/i.test(m[2])?Number(m[1])/60:Number(m[1]);
         if(ageHours>c.maxAgeHours) continue;
