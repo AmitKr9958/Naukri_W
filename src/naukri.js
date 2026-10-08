@@ -45,7 +45,7 @@ export function nextSearchPageUrl(currentUrl,links){
   for(const item of links){
     const href=typeof item==='string'?item:item?.href;
     const text=typeof item==='string'?'':item?.text;
-    if(text&&!/^\\s*next\\s*$/i.test(text))continue;
+    if(text&&!/^\s*next\s*$/i.test(text))continue;
     const url=cleanUrl(href);
     if(url&&url!==currentUrl)return url;
   }
