@@ -114,23 +114,111 @@ export async function ensureLoggedIn(page){
   if(/login|register/i.test(page.url())) throw new Error('Naukri session is not authenticated. Run npm run login.');
 }
 
+async function findVisible(page,selectors){
+  for(const selector of selectors){
+    const loc=page.locator(selector).filter({visible:true}).first();
+    if(await loc.count())return loc;
+  }
+  return null;
+}
+
+async function openSearchForm(page,c){
+  let keyword=await findVisible(page,[
+    'input[name="qp"]',
+    'input[placeholder*="Skills, Designations, Companies" i]',
+    'input[placeholder*="keyword" i]',
+    'input[placeholder*="Search jobs here" i]'
+  ]);
+  if(keyword)return keyword;
+
+  const trigger=await findVisible(page,[
+    'input[placeholder*="Search jobs here" i]',
+    '[aria-label*="search" i]',
+    'button:has-text("Search Jobs")',
+    'button:has-text("Search")'
+  ]);
+  if(trigger)await trigger.click().catch(()=>{});
+  await page.waitForTimeout(500);
+
+  keyword=await findVisible(page,[
+    'input[name="qp"]',
+    'input[placeholder*="Skills, Designations, Companies" i]',
+    'input[placeholder*="keyword" i]'
+  ]);
+  if(!keyword)throw new Error('Naukri search form is unavailable. Open Naukri in Chrome and verify the homepage search box is working.');
+  return keyword;
+}
+
+async function selectFreshnessLastDay(page){
+  try{
+    const freshness=page.getByText('Freshness',{exact:true}).first();
+    if(await freshness.count())await freshness.click().catch(()=>{});
+    await page.waitForTimeout(250);
+    const lastDay=page.getByText('Last 1 day',{exact:true}).first();
+    if(await lastDay.count()&&await lastDay.isVisible().catch(()=>false)){
+      await lastDay.click().catch(()=>{});
+      await page.waitForTimeout(1000);
+    }
+  }catch{}
+}
+
+async function runSearchFromHomepage(page,c,q,loc){
+  await withRetry(()=>page.goto(c.naukriUrl,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs}),{retries:c.maxRetries,delayMs:c.retryDelayMs});
+  await page.waitForTimeout(c.pageDelayMs);
+
+  const body=(await page.locator('body').innerText().catch(()=>'')).slice(0,12000);
+  if(/captcha|security verification|verify you are human|robot/i.test(body)){
+    throw new Error('Naukri requires CAPTCHA/security verification. Complete it with npm run login, then restart the watcher.');
+  }
+  if(/login|register/i.test(page.url())){
+    throw new Error('Naukri session expired during search. Automatic login did not restore the session.');
+  }
+
+  const keyword=await openSearchForm(page,c);
+  await keyword.fill(q);
+
+  const location=await findVisible(page,[
+    'input[name="ql"]',
+    'input[placeholder="Location" i]',
+    'input[placeholder*="location" i]',
+    'input[aria-label*="location" i]'
+  ]);
+  if(!location)throw new Error('Naukri location search field is unavailable.');
+  await location.fill(loc);
+
+  const searchButton=await findVisible(page,[
+    '#qsbFormBtn',
+    'button.qsbSrch',
+    'button[type="submit"]:has-text("Search")',
+    'button:has-text("Search")',
+    'input[type="submit"]'
+  ]);
+  if(!searchButton)throw new Error('Naukri search button is unavailable.');
+
+  await searchButton.click();
+  await page.waitForTimeout(Math.max(1500,c.pageDelayMs));
+
+  const resultBody=(await page.locator('body').innerText().catch(()=>'')).slice(0,12000);
+  if(/Oops! Something went wrong/i.test(resultBody)){
+    throw new Error('Naukri search returned its "Oops! Something went wrong" page even when submitted through the homepage search form.');
+  }
+
+  await selectFreshnessLastDay(page);
+  return page.url();
+}
+
 export async function searchJobs(page,c){
   const out=[];
   const seen=new Set();
 
   for(const q of c.roles.slice(0,8)){
     for(const loc of c.locations.length?c.locations:['']){
-      let url=loc
-        ? `https://www.naukri.com/${slugify(q)}-jobs-in-${slugify(loc)}?k=${encodeURIComponent(q)}&l=${encodeURIComponent(loc)}&sort=date`
-        : `https://www.naukri.com/${slugify(q)}-jobs?k=${encodeURIComponent(q)}&sort=date`;
+      let url=await runSearchFromHomepage(page,c,q,loc);
       const visitedPages=new Set();
 
       for(let pageNo=1;pageNo<=c.maxPagesPerSearch&&url;pageNo++){
         if(visitedPages.has(url))break;
         visitedPages.add(url);
-
-        await withRetry(()=>page.goto(url,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs}),{retries:c.maxRetries,delayMs:c.retryDelayMs});
-        await page.waitForTimeout(c.pageDelayMs);
 
         const body=(await page.locator('body').innerText().catch(()=>'')).slice(0,12000);
         if(/captcha|security verification|verify you are human|robot/i.test(body)){
@@ -145,7 +233,10 @@ export async function searchJobs(page,c){
           await page.waitForTimeout(2500);
           cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count();
         }
-        if(!cards)break;
+        if(!cards){
+          console.warn(JSON.stringify({search:q,location:loc||'ALL',page:pageNo,cards:0,message:'No Naukri job cards found after homepage form search',url:page.url()},null,0));
+          break;
+        }
 
         const extracted=await extractFreshCards(page,c);
         if(!extracted.fresh.length)console.warn(JSON.stringify({search:q,location:loc||'ALL',page:pageNo,cards,diagnostics:extracted.diagnostics},null,0));
@@ -158,7 +249,9 @@ export async function searchJobs(page,c){
 
         const next=pageNo<c.maxPagesPerSearch?await nextPageUrl(page,url):null;
         if(!next)break;
-        url=next;
+        await page.goto(next,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs});
+        await page.waitForTimeout(c.pageDelayMs);
+        url=page.url();
       }
     }
   }
