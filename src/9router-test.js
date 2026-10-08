@@ -19,13 +19,14 @@ const r=await fetch('http://localhost:20128/v1/chat/completions',{
   body:JSON.stringify({
     model:'kc/nvidia/nemotron-3.5-lightning:free',
     messages:[{role:'user',content:'Reply with exactly: OK'}],
-    max_tokens:10
+    max_tokens:64
   })
 });
 const text=await r.text();
 console.log('HTTP_STATUS='+r.status);
 if(!r.ok)throw new Error(text);
-const data=JSON.parse(text);
+const clean=text.replace(/^data:\s*/gm,'').replace(/\n?data:\s*\[DONE\]\s*$/,'').trim();
+const data=JSON.parse(clean);
 const answer=data?.choices?.[0]?.message?.content?.trim();
 console.log('MODEL_REPLY='+answer);
 if(answer!=='OK')throw new Error('Unexpected model reply.');
