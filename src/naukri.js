@@ -133,14 +133,31 @@ async function findInputByPlaceholder(page,pattern){
   return null;
 }
 
+async function waitForSearchInputs(page,c){
+  const selectors=[
+    'input.suggestor-input',
+    'input[aria-label="Enter keyword, designation, or companies"]',
+    'input[placeholder*="Enter keyword / designation / companies" i]',
+    'input[placeholder*="Enter location" i]',
+    '.nI-gNb-sb__icon-wrapper[aria-label="Search"]',
+    'button[aria-label="Search"]'
+  ];
+  const timeout=Math.max(8000,c.navigationTimeoutMs);
+  for(const selector of selectors){
+    const loc=page.locator(selector).first();
+    try{
+      await loc.waitFor({state:'visible',timeout:Math.min(timeout,8000)});
+    }catch{}
+  }
+}
+
 async function openSearchForm(page,c){
-  await page.waitForTimeout(Math.max(1500,c.pageDelayMs));
+  await waitForSearchInputs(page,c);
   let keyword=await findInputByPlaceholder(page,/keyword|designation|companies/i);
   if(keyword)return keyword;
-  keyword=await findInputByPlaceholder(page,/keyword|designation|companies/i);
-  if(keyword)return keyword;
+
   keyword=await findVisible(page,[
-    'input.suggestor-input[placeholder*="keyword" i]',
+    'input.suggestor-input',
     'input[aria-label="Enter keyword, designation, or companies"]',
     'input[placeholder*="Enter keyword / designation / companies" i]',
     'input[name="qp"]',
@@ -156,16 +173,16 @@ async function openSearchForm(page,c){
     'button:has-text("Search")'
   ]);
   if(trigger)await trigger.click().catch(()=>{});
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(750);
 
   keyword=await findVisible(page,[
-    'input.suggestor-input[placeholder*="keyword" i]',
+    'input.suggestor-input',
     'input[aria-label="Enter keyword, designation, or companies"]',
     'input[placeholder*="Enter keyword / designation / companies" i]',
     'input[name="qp"]',
     'input[placeholder*="Skills, Designations, Companies" i]'
   ]);
-  if(!keyword)throw new Error('Naukri search form is unavailable. Open Naukri in Chrome and verify the homepage search box is working.');
+  if(!keyword)throw new Error('Naukri search form is unavailable. The logged-in homepage did not expose a visible keyword search input.');
   return keyword;
 }
 
