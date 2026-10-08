@@ -121,7 +121,19 @@ export async function searchJobs(page,c){
         await withRetry(()=>page.goto(url,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs}),{retries:c.maxRetries,delayMs:c.retryDelayMs});
         await page.waitForTimeout(c.pageDelayMs);
 
-        const cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count();
+        const body=(await page.locator('body').innerText().catch(()=>'')).slice(0,12000);
+        if(/captcha|security verification|verify you are human|robot/i.test(body)){
+          throw new Error('Naukri requires CAPTCHA/security verification. Complete it with npm run login, then restart the watcher.');
+        }
+        if(/login|register/i.test(page.url())){
+          throw new Error('Naukri session expired during search. Automatic login did not restore the session.');
+        }
+
+        let cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count();
+        if(!cards){
+          await page.waitForTimeout(2500);
+          cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count();
+        }
         if(!cards)break;
 
         const fresh=await extractFreshCards(page,c);
