@@ -1,50 +1,44 @@
 # Naukri Hourly Job Watcher
 
-Production-oriented Playwright worker that runs every hour, uses a persistent Naukri browser profile, discovers jobs posted in the last 6 hours, scores them against the local resume/profile, and sends high-confidence matches to Telegram.
+Production-oriented Playwright worker that runs every hour, uses a persistent Naukri browser profile, discovers jobs posted in the last 6 hours, scores them against the local resume/profile, optionally uses AI as a second-stage evaluator, and sends the best matches to Telegram.
 
 ## Important
 - Does not auto-apply to jobs.
 - Does not bypass CAPTCHA, MFA, bot checks, or access controls.
 - Prefer a persistent authenticated browser session instead of storing a Naukri password.
 - Keep .env and .naukri-profile out of Git.
+- The local machine must be on and connected to the internet for the worker to run.
 
 ## Windows
-1. Create/clone to E:\naukri_W.
+1. Create or clone to E:\naukri_W.
 2. Install Node.js 20+.
-3. npm install
-4. npx playwright install chromium
-5. Copy .env.example .env and configure Telegram plus resume path.
-6. npm run login and complete Naukri login interactively.
+3. Run npm install.
+4. Run npx playwright install chromium.
+5. Copy .env.example to .env and configure Telegram plus resume path.
+6. Run npm run login and complete Naukri login interactively.
 7. Test with DRY_RUN=true.
-8. Install scripts/install-task.ps1 for the hourly background task.
+8. For production, set DRY_RUN=false and NAUKRI_HEADLESS=true, configure Telegram, and enable AI only after consent is recorded.
+9. Run scripts/install-background.ps1 from an elevated PowerShell session.
 
 ## Resume
 RESUME_PATH can include an extension or omit it; common PDF/DOCX/TXT extensions are tried.
 
 ## Matching
-Jobs older than 6 hours are rejected. Scoring uses role, skills, experience, location and recency. Duplicate jobs are suppressed.
+Jobs older than 6 hours are rejected. Scoring uses role, skills, location and recency. Duplicate jobs are suppressed. When AI is enabled, up to AI_CANDIDATE_LIMIT fresh unseen candidates (default 30) are evaluated, then only the top MAX_JOBS_PER_RUN matches (default 15) are sent to Telegram.
 
 ## Telegram
-Create a bot with BotFather, set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID, then run a dry test before enabling normal delivery.
+Create a bot with BotFather, send /start to the bot, set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID, then test delivery before enabling normal delivery.
 
-## Linux/server
-Mount or copy the resume to the server and set RESUME_PATH accordingly. Use systemd or another supervisor. Persistent browser state must remain on the host.
+## AI matching and privacy
+The AI is an optional second-stage evaluator using an OpenAI-compatible endpoint. Local 9Router is supported. The API key is read only from .env and is never committed.
+Before AI analysis, resume and job text is redacted for email, phone, obvious IDs, salary/CTC, and address fields. AI consent is required. AI failure falls back to the deterministic score and does not stop the watcher.
 
 ## Scheduling
-The worker itself checks on an hourly cadence; Windows Task Scheduler adds process recovery/restart resilience.
+The worker runs on the configured cadence. Windows Task Scheduler starts it at logon and restarts it after failures. Do not create multiple copies of the task because each copy would duplicate searches and Telegram alerts.
 
+## Validation
+Run npm test
+Run npm run lint
+Run npm run ai-9router-test
 
-## Optional AI matching
-The watcher can add an LLM-based fit score on top of the deterministic matcher. It uses an OpenAI-compatible endpoint, so it can work with a local 9Router endpoint or a cloud OpenRouter endpoint. The API key is read only from `.env` and is never committed.
-
-Set:
-```
-AI_ENABLED=true
-AI_BASE_URL=http://localhost:20128/v1
-AI_API_KEY=your-local-or-router-key
-AI_MODEL=cc/claude-haiku-4-20250514
-```
-
-The AI receives a redacted resume and redacted job description. Email addresses, phone numbers and obvious address fields are removed before transmission. AI failure does not stop the watcher; the deterministic match score remains available.
-
-For OpenRouter, use its OpenAI-compatible `/api/v1/chat/completions` endpoint and a model available to your account. For 9Router, use its OpenAI-compatible local or cloud endpoint.
+Do not use npm audit fix --force; review dependency updates separately.
