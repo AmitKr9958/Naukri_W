@@ -18,9 +18,9 @@ export function parseAgeHours(raw) {
   m = s.match(/(\d+(?:\.\d+)?)\s*(?:hour|hours|hr|hrs)\s*(?:ago)?/);
   if (m) return Number(m[1]);
   if (/few\s+(?:hour|hours)/.test(s)) return 3;
-  m = s.match(/(\d+(?:\.\d+)?)\s*(?:day|days|d)\s*(?:ago)?/);
+  m = s.match(/(\d+(?:\.\d+)?)\s*\+?\s*(?:day|days|d)\s*(?:ago)?/);
   if (m) return Number(m[1]) * 24;
-  m = s.match(/(\d+(?:\.\d+)?)\s*(?:week|weeks|wk|wks)\s*(?:ago)?/);
+  m = s.match(/(\d+(?:\.\d+)?)\s*\+?\s*(?:week|weeks|wk|wks)\s*(?:ago)?/);
   if (m) return Number(m[1]) * 168;
   m = s.match(/(\d+(?:\.\d+)?)\s*(?:month|months|mo)\s*(?:ago)?/);
   if (m) return Number(m[1]) * 720;
