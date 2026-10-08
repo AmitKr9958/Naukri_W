@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import {createRequire} from 'node:module';
 
 const appData=process.env.APPDATA||path.join(os.homedir(),'AppData','Roaming');
 const dbPath=path.join(appData,'9router','db','data.sqlite');
@@ -9,8 +10,8 @@ const sqlitePath=path.join(appData,'npm','node_modules','9router','runtime','nod
 if(!fs.existsSync(dbPath)) throw new Error('9Router database not found: '+dbPath);
 if(!fs.existsSync(sqlitePath)) throw new Error('9Router SQLite driver not found: '+sqlitePath);
 
-const Database=(await import(sqlitePath)).default||await import(sqlitePath);
-const Ctor=typeof Database==='function'?Database:Database.default;
+const require=createRequire(import.meta.url);
+const Ctor=require(sqlitePath);
 const db=new Ctor(dbPath,{readonly:true});
 const row=db.prepare("SELECT key FROM apiKeys WHERE isActive=1 ORDER BY createdAt DESC LIMIT 1").get();
 db.close();
