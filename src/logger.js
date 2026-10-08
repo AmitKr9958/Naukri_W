@@ -1,1 +1,1 @@
-(Please populate this file from the local project at E:\naukri_W.)
+import pino from 'pino'; export const logger=pino({level:process.env.LOG_LEVEL||'info',redact:{paths:['*.password','*.telegramToken','*.token','*.authorization'],censor:'[REDACTED]'}});
