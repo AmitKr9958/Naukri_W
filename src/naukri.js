@@ -80,6 +80,7 @@ function findPostedText(raw, preferred) {
 
 async function extractFreshCards(page, c) {
   const fresh = [];
+  let rejectedByFreshness = 0;
   const diagnostics = [];
   const cards = await page.locator('.cust-job-tuple,.srp-jobtuple-wrapper,[data-job-id]').all();
   for (const card of cards.slice(0, 50)) {
@@ -111,7 +112,10 @@ async function extractFreshCards(page, c) {
     if (diagnostics.length < 5) {
       diagnostics.push({title, postedText: postedText || preferredPosted || 'NOT_FOUND', ageHours});
     }
-    if (ageHours == null || ageHours > c.maxAgeHours) continue;
+    if (ageHours == null || ageHours > c.maxAgeHours) {
+      rejectedByFreshness++;
+      continue;
+    }
 
     const location =
       (await textFromFirst(card, ['.locWdth', '.loc-wrap [title]', '.location', '.loc'])) ||
@@ -125,7 +129,7 @@ async function extractFreshCards(page, c) {
 
     fresh.push({title, company, location, description, url: link, ageHours, postedText});
   }
-  return {fresh, diagnostics};
+  return {fresh, diagnostics, rejectedByFreshness};
 }
 
 function isAccessDeniedPage(title, body, url) {
@@ -600,6 +604,8 @@ export async function searchJobs(page, c) {
                 location: loc || 'ALL',
                 page: pageNo,
                 cards,
+                freshCards: extracted.fresh.length,
+                rejectedByFreshness: extracted.rejectedByFreshness,
                 diagnostics: extracted.diagnostics
               },
               null,
@@ -607,6 +613,18 @@ export async function searchJobs(page, c) {
             )
           );
         }
+        console.info(
+          JSON.stringify({
+            search: q,
+            location: loc || 'ALL',
+            page: pageNo,
+            cards,
+            freshCards: extracted.fresh.length,
+            rejectedByFreshness: extracted.rejectedByFreshness,
+            maxAgeHours: c.maxAgeHours
+          })
+        );
+
         for (const job of extracted.fresh) {
           if (!seen.has(job.url)) {
             seen.add(job.url);
