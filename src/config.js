@@ -15,7 +15,7 @@ export const config={
   minMatchScore:Number(process.env.MIN_MATCH_SCORE||60),
   maxJobsPerRun:Number(process.env.MAX_JOBS_PER_RUN||15),
   telegramToken:process.env.TELEGRAM_BOT_TOKEN||'',
-  telegramChatId:process.env.TELEGRAM_CHAT_ID||'',
+  telegramChatId:process.env.TELEGRAM_CHAT_ID||'',aiEnabled:bool(process.env.AI_ENABLED,true),openRouterKey:process.env.OPENROUTER_API_KEY||'',openRouterModel:process.env.OPENROUTER_MODEL||'openrouter/free',
   aiEnabled:bool(process.env.AI_ENABLED,false),
   aiBaseUrl:process.env.AI_BASE_URL||'http://localhost:20128/v1',
   aiApiKey:process.env.AI_API_KEY||'',
@@ -30,5 +30,5 @@ export function validateConfig(){
   for(const[k,v]of [['RESUME_PATH',config.resumePath],['TELEGRAM_BOT_TOKEN',config.telegramToken],['TELEGRAM_CHAT_ID',config.telegramChatId]])if(!v&&!config.dryRun)m.push(k);
   if(config.aiEnabled&&!config.aiApiKey)m.push('AI_API_KEY (when AI_ENABLED=true)');
   if(m.length)throw new Error('Missing required configuration: '+m.join(', '));
-  if(config.runEveryMinutes<60)throw new Error('RUN_EVERY_MINUTES must be >= 60.');
+  if(config.runEveryMinutes<60)throw new Error('RUN_EVERY_MINUTES must be >= 60.');if(config.aiEnabled&&!config.openRouterKey)console.warn('AI enabled but OPENROUTER_API_KEY is empty; AI enrichment will be skipped.');
 }
