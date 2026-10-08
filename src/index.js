@@ -33,9 +33,11 @@ async function runOnce(){
     if(config.aiEnabled&&config.aiConsent) pool=await analyzeJobs(config,pool,resume.text);
 
     let matches=pool
-      .filter(j=>config.aiEnabled&&config.aiConsent
-        ? (j.relevant===true&&j.finalScore>=config.minMatchScore)
-        : j.score>=config.minMatchScore)
+      .filter(j=>{
+        const score=j.finalScore??j.score;
+        if(config.aiEnabled&&config.aiConsent&&j.relevant===false)return false;
+        return score>=config.minMatchScore;
+      })
       .sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
 
     if(matches.length)await sendTelegram(config,matches);
