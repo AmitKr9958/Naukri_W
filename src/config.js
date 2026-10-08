@@ -1,5 +1,7 @@
 import 'dotenv/config'; import path from 'node:path';
-const csv=v=>(v||'').split(',').map(s=>s.trim()).filter(Boolean); const bool=(v,d=false)=>v==null?d:['1','true','yes','on'].includes(String(v).toLowerCase());
+const csv=v=>(v||'').split(',').map(s=>s.trim()).filter(Boolean);
+const bool=(v,d=false)=>v==null?d:['1','true','yes','on'].includes(String(v).toLowerCase());
+const localAI=url=>/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(?:\/|$)/i.test(url||'');
 export const config={
   tz:process.env.TZ||'Asia/Kolkata',
   runEveryMinutes:Number(process.env.RUN_EVERY_MINUTES||60),
@@ -17,6 +19,7 @@ export const config={
   telegramToken:process.env.TELEGRAM_BOT_TOKEN||'',
   telegramChatId:process.env.TELEGRAM_CHAT_ID||'',
   aiEnabled:bool(process.env.AI_ENABLED,false),
+  aiConsent:bool(process.env.AI_CONSENT,false),
   aiBaseUrl:process.env.AI_BASE_URL||'http://localhost:20128/v1',
   aiApiKey:process.env.AI_API_KEY||'',
   aiModel:process.env.AI_MODEL||'cc/claude-haiku-4-20250514',
@@ -28,7 +31,8 @@ export const config={
 export function validateConfig(){
   const m=[];
   for(const[k,v]of [['RESUME_PATH',config.resumePath],['TELEGRAM_BOT_TOKEN',config.telegramToken],['TELEGRAM_CHAT_ID',config.telegramChatId]])if(!v&&!config.dryRun)m.push(k);
-  if(config.aiEnabled&&!config.aiApiKey)m.push('AI_API_KEY (when AI_ENABLED=true)');
+  if(config.aiEnabled&&!config.aiConsent)console.warn('AI is enabled but AI_CONSENT=false; AI analysis will be skipped.');
+  if(config.aiEnabled&&!localAI(config.aiBaseUrl)&&!config.aiApiKey)m.push('AI_API_KEY (required for non-local AI endpoint)');
   if(m.length)throw new Error('Missing required configuration: '+m.join(', '));
   if(config.runEveryMinutes<60)throw new Error('RUN_EVERY_MINUTES must be >= 60.');
 }
