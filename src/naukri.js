@@ -110,8 +110,8 @@ export async function searchJobs(page,c){
   for(const q of c.roles.slice(0,8)){
     for(const loc of c.locations.length?c.locations:['']){
       let url=loc
-        ? `https://www.naukri.com/${slugify(q)}-jobs-in-${slugify(loc)}?k=${encodeURIComponent(q)}&l=${encodeURIComponent(loc)}`
-        : `https://www.naukri.com/${slugify(q)}-jobs?k=${encodeURIComponent(q)}`;
+        ? `https://www.naukri.com/${slugify(q)}-jobs-in-${slugify(loc)}?k=${encodeURIComponent(q)}&l=${encodeURIComponent(loc)}&sort=date`
+        : `https://www.naukri.com/${slugify(q)}-jobs?k=${encodeURIComponent(q)}&sort=date`;
       const visitedPages=new Set();
 
       for(let pageNo=1;pageNo<=c.maxPagesPerSearch&&url;pageNo++){
