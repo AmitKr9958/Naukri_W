@@ -1,1 +1,23 @@
-{"name":"naukri-hourly-job-watcher","version":"1.0.0","private":true,"type":"module","engines":{"node":">=20"},"scripts":{"start":"node src/index.js","login":"node src/login.js","test":"node --test","lint":"node --check src/index.js && node --check src/naukri.js && node --check src/matcher.js"},"dependencies":{"dotenv":"^16.4.5","pino":"^9.3.2","playwright":"^1.48.2","pdf-parse":"^1.1.1","mammoth":"^1.8.0"}}
+{
+  "name": "naukri-hourly-job-watcher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "login": "node src/login.js",
+    "test": "node --test",
+    "lint": "node --check src/index.js && node --check src/naukri.js && node --check src/matcher.js",
+    "ai-consent": "node src/ai-consent.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pino": "^9.3.2",
+    "playwright": "^1.48.2",
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.8.0"
+  }
+}
