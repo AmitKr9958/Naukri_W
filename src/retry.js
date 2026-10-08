@@ -1,1 +1,1 @@
-(Please populate this file from the local project at E:\naukri_W.)
+export async function withRetry(fn,{retries=3,delayMs=5000,onRetry}={}){let last;for(let a=0;a<=retries;a++){try{return await fn()}catch(e){last=e;if(a===retries)break;onRetry?.(e,a+1);await new Promise(r=>setTimeout(r,delayMs*(a+1)))}}throw last}
