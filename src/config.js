@@ -43,6 +43,8 @@ export function validateConfig(){
   if(!config.locations.length)m.push('JOB_LOCATIONS');
   if(config.maxAgeHours<=0)m.push('JOB_MAX_AGE_HOURS (> 0)');
   if(config.minMatchScore<0||config.minMatchScore>100)m.push('MIN_MATCH_SCORE (0-100)');
+  if(config.maxPagesPerSearch<1)m.push('MAX_PAGES_PER_SEARCH (>= 1)');
+  if(config.pageDelayMs<0)m.push('PAGE_DELAY_MS (>= 0)');
   if(config.aiCandidateLimit<config.maxJobsPerRun)console.warn('AI_CANDIDATE_LIMIT is below MAX_JOBS_PER_RUN; increase it to preserve broad AI ranking.');
   if(config.aiEnabled&&!config.aiConsent)console.warn('AI is enabled but AI_CONSENT=false; AI analysis will be skipped.');
   if(config.aiEnabled&&!localAI(config.aiBaseUrl)&&!config.aiApiKey)m.push('AI_API_KEY (required for non-local AI endpoint)');
