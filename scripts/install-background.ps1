@@ -26,6 +26,11 @@ if ($envText -match '(?m)^AI_ENABLED=true\s*$' -and $envText -notmatch '(?m)^AI_
 }
 
 $taskName = "Naukri Job Watcher 30min 24x7"
+$legacyTaskName = "Naukri Job Watcher 10min 24x7"
+if (Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue) {
+  Unregister-ScheduledTask -TaskName $legacyTaskName -Confirm:$false
+  Write-Host "Removed legacy task: $legacyTaskName"
+}
 $runner = Join-Path $root "scripts\run-background.ps1"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"') -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -AtLogOn
