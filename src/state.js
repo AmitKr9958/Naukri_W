@@ -1,1 +1,1 @@
-(Please populate this file from the local project at E:\naukri_W.)
+import fs from 'node:fs/promises'; const file='state.json'; export async function loadSeen(){try{return new Set(JSON.parse(await fs.readFile(file,'utf8')).urls||[])}catch{return new Set()}} export async function saveSeen(set){const t=file+'.tmp';await fs.writeFile(t,JSON.stringify({updatedAt:new Date().toISOString(),urls:[...set].slice(-5000)},null,2));await fs.rename(t,file)}
