@@ -116,8 +116,8 @@ export async function ensureLoggedIn(page){
 
 async function findVisible(page,selectors){
   for(const selector of selectors){
-    const loc=page.locator(selector).filter({visible:true}).first();
-    if(await loc.count())return loc;
+    const loc=page.locator(selector).first();
+    if(await loc.count()&&await loc.isVisible().catch(()=>false))return loc;
   }
   return null;
 }
