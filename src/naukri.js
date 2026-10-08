@@ -124,10 +124,11 @@ async function findVisible(page,selectors){
 
 async function openSearchForm(page,c){
   let keyword=await findVisible(page,[
+    'input.suggestor-input[placeholder*="keyword" i]',
+    'input[aria-label="Enter keyword, designation, or companies"]',
+    'input[placeholder*="Enter keyword / designation / companies" i]',
     'input[name="qp"]',
-    'input[placeholder*="Skills, Designations, Companies" i]',
-    'input[placeholder*="keyword" i]',
-    'input[placeholder*="Search jobs here" i]'
+    'input[placeholder*="Skills, Designations, Companies" i]'
   ]);
   if(keyword)return keyword;
 
@@ -142,9 +143,11 @@ async function openSearchForm(page,c){
   await page.waitForTimeout(500);
 
   keyword=await findVisible(page,[
+    'input.suggestor-input[placeholder*="keyword" i]',
+    'input[aria-label="Enter keyword, designation, or companies"]',
+    'input[placeholder*="Enter keyword / designation / companies" i]',
     'input[name="qp"]',
-    'input[placeholder*="Skills, Designations, Companies" i]',
-    'input[placeholder*="keyword" i]'
+    'input[placeholder*="Skills, Designations, Companies" i]'
   ]);
   if(!keyword)throw new Error('Naukri search form is unavailable. Open Naukri in Chrome and verify the homepage search box is working.');
   return keyword;
@@ -192,15 +195,18 @@ async function runSearchFromHomepage(page,c,q,loc){
   await keyword.fill(q);
 
   const location=await findVisible(page,[
+    'input.suggestor-input[placeholder*="location" i]',
+    'input[aria-label="Enter location"]',
+    'input[placeholder="Enter location" i]',
     'input[name="ql"]',
-    'input[placeholder="Location" i]',
-    'input[placeholder*="location" i]',
-    'input[aria-label*="location" i]'
+    'input[placeholder*="location" i]'
   ]);
   if(!location)throw new Error('Naukri location search field is unavailable.');
   await location.fill(loc);
 
   const searchButton=await findVisible(page,[
+    'button[aria-label="Search"]',
+    '.nI-gNb-sb__icon-wrapper[aria-label="Search"]',
     '#qsbFormBtn',
     'button.qsbSrch',
     'button[type="submit"]:has-text("Search")',
