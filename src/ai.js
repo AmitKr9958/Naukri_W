@@ -10,7 +10,7 @@ export async function analyzeJobs(c,jobs,resumeText){
    const body={model:c.aiModel,messages:[{role:'system',content:'You are a concise job-matching assistant. Return valid JSON only.'},{role:'user',content:JSON.stringify({resume,job:{title:job.title,company:job.company,location:job.location,description:clip(job.description)},task:'Return JSON: {"fit":0-100,"reason":"one short sentence","missing":["up to 3 skills"]}. Do not infer private information.'})}],temperature:0.1,max_tokens:220};
    const data=await withRetry(async()=>{const r=await fetch(c.aiBaseUrl.replace(/\/$/,'')+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+c.aiApiKey,'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error('AI HTTP '+r.status);return r.json()},{retries:1,delayMs:c.retryDelayMs});
    const raw=data?.choices?.[0]?.message?.content||''; const parsed=JSON.parse(raw.replace(/^\s*```json\s*|\s*```\s*$/g,''));
-   results.push({...job,aiFit:Number(parsed.fit)||0,aiReason:String(parsed.reason||''),aiMissing:Array.isArray(parsed.missing)?parsed.missing.slice(0,3):[]});
+   const aiFit=Math.max(0,Math.min(100,Number(parsed.fit)||0)); results.push({...job,aiFit,aiReason:String(parsed.reason||''),aiMissing:Array.isArray(parsed.missing)?parsed.missing.slice(0,3):[],finalScore:Math.round(job.score*0.4+aiFit*0.6)});
   }catch{results.push({...job,aiFit:null,aiReason:'AI analysis unavailable; rule-based score retained.',aiMissing:[]});}
  } return results;
 }
