@@ -1,1 +1,1 @@
-(Please populate this file from the local project at E:\naukri_W.)
+import {chromium} from 'playwright'; import {config} from './config.js'; const c=await chromium.launchPersistentContext(config.profileDir,{headless:false,viewport:{width:1440,height:1000}});const p=c.pages()[0]||await c.newPage();await p.goto(config.naukriUrl,{waitUntil:'domcontentloaded',timeout:config.navigationTimeoutMs});console.log('Complete Naukri login/OTP/CAPTCHA manually, then press Enter here.');await new Promise(r=>process.stdin.once('data',r));await c.close();
