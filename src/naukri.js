@@ -578,16 +578,29 @@ async function runSearchFromHomepage(page, c, q, loc) {
     );
   }
 
+  // Naukri's UI freshness control is not consistently exposed to Playwright.
+  // Apply the public freshness URL parameter as an early pre-filter, then keep
+  // the strict 6-hour parser below as the authoritative filter.
+  let resultUrl = page.url();
+  try {
+    const u = new URL(resultUrl);
+    u.searchParams.set('freshness', '1');
+    await page.goto(u.href, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
+    await page.waitForTimeout(Math.max(800, Math.min(c.pageDelayMs, 1200)));
+    resultUrl = page.url();
+  } catch {}
+
   const sortedByDate = await selectSortByDate(page);
-  const freshnessFilterApplied = await selectFreshnessLastDay(page);
+  const freshnessFilterApplied = /(?:^|[?&])freshness=1(?:&|$)/i.test(resultUrl);
   console.info(JSON.stringify({
     search: q,
     location: loc || 'ALL',
     sortedByDate,
     freshnessFilterApplied,
-    maxAgeHours: c.maxAgeHours
+    maxAgeHours: c.maxAgeHours,
+    freshnessParam: '1'
   }));
-  return page.url();
+  return resultUrl;
 }
 
 export async function searchJobs(page, c) {
@@ -611,7 +624,7 @@ export async function searchJobs(page, c) {
       let url = await runSearchFromHomepage(page, c, q, loc);
       const visitedPages = new Set();
 
-      for (let pageNo = 1; pageNo <= Math.min(c.maxPagesPerSearch, 3) && url; pageNo++) {
+      for (let pageNo = 1; pageNo <= Math.min(c.maxPagesPerSearch, 2) && url; pageNo++) {
         if (visitedPages.has(url)) break;
         visitedPages.add(url);
 
@@ -702,7 +715,7 @@ export async function searchJobs(page, c) {
           break;
         }
 
-        const next = pageNo < Math.min(c.maxPagesPerSearch, 3) ? await nextPageUrl(page, url) : null;
+        const next = pageNo < Math.min(c.maxPagesPerSearch, 2) ? await nextPageUrl(page, url) : null;
         if (!next) break;
         await page.goto(next, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
         await page.waitForTimeout(c.pageDelayMs);
