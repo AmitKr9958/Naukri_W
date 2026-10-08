@@ -1,4 +1,45 @@
-import fs from 'node:fs/promises'; import {config,validateConfig} from './config.js'; import {logger} from './logger.js'; import {loadResume} from './resume.js'; import {buildProfile,scoreJob} from './matcher.js'; import {openNaukri,ensureLoggedIn,searchJobs} from './naukri.js'; import {loadSeen,saveSeen} from './state.js'; import {sendTelegram} from './telegram.js';
-await fs.mkdir('logs',{recursive:true});validateConfig();let stopping=false;process.on('SIGINT',()=>stopping=true);process.on('SIGTERM',()=>stopping=true);
-async function runOnce(){const start=Date.now();logger.info('Run started');const resume=await loadResume(config.resumePath),profile=buildProfile(resume.text,config),seen=await loadSeen(),{context,page}=await openNaukri(config);try{await ensureLoggedIn(page);const candidates=await searchJobs(page,config),matches=candidates.map(j=>({...j,...scoreJob(j,profile)})).filter(j=>j.score>=config.minMatchScore&&!seen.has(j.url)).sort((a,b)=>b.score-a.score).slice(0,config.maxJobsPerRun);for(const j of candidates)seen.add(j.url);await saveSeen(seen);if(matches.length)await sendTelegram(config,matches);logger.info({candidates:candidates.length,matches:matches.length,durationMs:Date.now()-start},'Run complete')}finally{await context.close().catch(()=>{})}}
-if(config.runOnStart)await runOnce().catch(e=>logger.error({err:e},'Run failed'));while(!stopping){await new Promise(r=>setTimeout(r,config.runEveryMinutes*60000));if(!stopping)await runOnce().catch(e=>logger.error({err:e},'Run failed'))}
+import fs from 'node:fs/promises';
+import {config,validateConfig} from './config.js';
+import {logger} from './logger.js';
+import {loadResume} from './resume.js';
+import {buildProfile,scoreJob} from './matcher.js';
+import {analyzeJobs} from './ai.js';
+import {openNaukri,ensureLoggedIn,searchJobs} from './naukri.js';
+import {loadSeen,saveSeen} from './state.js';
+import {sendTelegram} from './telegram.js';
+
+await fs.mkdir('logs',{recursive:true});
+validateConfig();
+let stopping=false;
+process.on('SIGINT',()=>stopping=true);
+process.on('SIGTERM',()=>stopping=true);
+
+async function runOnce(){
+  const start=Date.now();
+  logger.info({aiEnabled:config.aiEnabled},'Run started');
+  const resume=await loadResume(config.resumePath);
+  const profile=buildProfile(resume.text,config);
+  const seen=await loadSeen();
+  const {context,page}=await openNaukri(config);
+  try{
+    await ensureLoggedIn(page);
+    const candidates=await searchJobs(page,config);
+    let matches=candidates
+      .map(j=>({...j,...scoreJob(j,profile)}))
+      .filter(j=>j.score>=config.minMatchScore&&!seen.has(j.url))
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,config.maxJobsPerRun);
+    if(config.aiEnabled) matches=await analyzeJobs(config,matches,resume.text);
+    matches.sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
+    for(const j of candidates)seen.add(j.url);
+    await saveSeen(seen);
+    if(matches.length)await sendTelegram(config,matches);
+    logger.info({candidates:candidates.length,matches:matches.length,durationMs:Date.now()-start},'Run complete');
+  }finally{await context.close().catch(()=>{})}
+}
+
+if(config.runOnStart)await runOnce().catch(e=>logger.error({err:e},'Run failed'));
+while(!stopping){
+  await new Promise(r=>setTimeout(r,config.runEveryMinutes*60000));
+  if(!stopping)await runOnce().catch(e=>logger.error({err:e},'Run failed'));
+}
