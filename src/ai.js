@@ -31,7 +31,7 @@ export async function analyzeJobs(c,jobs,resumeText){
           job:{title:redact(job.title),company:redact(job.company),location:redact(job.location),description:redactForAI(job.description)},
           task:'Evaluate this job for the candidate. Return JSON: relevant (boolean), fit (0-100), roleFit (0-100), reason (one short sentence), missing (up to 3 skills). Relevant must be false for a clearly unrelated role even if transferable skills exist.'
         })}
-      ],temperature:0.1,max_tokens:260};
+      ],temperature:0.1,max_tokens:700};
       const data=await withRetry(async()=>{
         const r=await fetch(c.aiBaseUrl.replace(/\/$/,'')+'/chat/completions',{
           method:'POST',
@@ -43,7 +43,8 @@ export async function analyzeJobs(c,jobs,resumeText){
         const clean=text.replace(/^data:\s*/gm,'').replace(/\n?data:\s*\[DONE\]\s*$/,'').trim();
         return JSON.parse(clean);
       },{retries:1,delayMs:c.retryDelayMs});
-      const parsed=parseJson(data?.choices?.[0]?.message?.content||'');
+      const message=data?.choices?.[0]?.message||{};
+      const parsed=parseJson(message.content||message.reasoning||'');
       const aiFit=Math.max(0,Math.min(100,Number(parsed.fit)||0));
       const roleFit=Math.max(0,Math.min(100,Number(parsed.roleFit)||0));
       const relevant=parsed.relevant===true;
