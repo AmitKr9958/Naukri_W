@@ -25,13 +25,13 @@ if ($envText -match '(?m)^AI_ENABLED=true\s*$' -and $envText -notmatch '(?m)^AI_
   throw "AI_ENABLED=true requires AI_CONSENT=true."
 }
 
-$taskName = "Naukri Hourly Job Watcher"
+$taskName = "Naukri Job Watcher 10min 24x7"
 $runner = Join-Path $root "scripts\run-background.ps1"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"') -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 10)
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description "Hourly Naukri job watcher with Telegram alerts" -Force | Out-Null
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description "10-minute Naukri job watcher with Telegram alerts" -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
 
 Write-Host "Installed: $taskName"
-Write-Host "Runs at Windows logon and repeats according to RUN_EVERY_MINUTES in .env."
+Write-Host "Starts at Windows logon and repeats according to RUN_EVERY_MINUTES in .env."
