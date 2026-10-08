@@ -36,7 +36,8 @@ export async function analyzeJobs(c,jobs,resumeText){
         const r=await fetch(c.aiBaseUrl.replace(/\/$/,'')+'/chat/completions',{
           method:'POST',
           headers:{Authorization:'Bearer '+c.aiApiKey,'Content-Type':'application/json'},
-          body:JSON.stringify(body)
+          body:JSON.stringify(body),
+          signal:AbortSignal.timeout(c.httpTimeoutMs)
         });
         if(!r.ok)throw new Error('AI HTTP '+r.status);
         const text=await r.text();
