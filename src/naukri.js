@@ -122,8 +122,24 @@ async function findVisible(page,selectors){
   return null;
 }
 
+async function findInputByPlaceholder(page,pattern){
+  const inputs=await page.locator('input').all();
+  for(const input of inputs){
+    if(!await input.isVisible().catch(()=>false))continue;
+    const placeholder=(await input.getAttribute('placeholder').catch(()=>''))||'';
+    const aria=(await input.getAttribute('aria-label').catch(()=>''))||'';
+    if(pattern.test(placeholder)||pattern.test(aria))return input;
+  }
+  return null;
+}
+
 async function openSearchForm(page,c){
-  let keyword=await findVisible(page,[
+  await page.waitForTimeout(Math.max(1500,c.pageDelayMs));
+  let keyword=await findInputByPlaceholder(page,/keyword|designation|companies/i);
+  if(keyword)return keyword;
+  keyword=await findInputByPlaceholder(page,/keyword|designation|companies/i);
+  if(keyword)return keyword;
+  keyword=await findVisible(page,[
     'input.suggestor-input[placeholder*="keyword" i]',
     'input[aria-label="Enter keyword, designation, or companies"]',
     'input[placeholder*="Enter keyword / designation / companies" i]',
@@ -194,7 +210,8 @@ async function runSearchFromHomepage(page,c,q,loc){
   const keyword=await openSearchForm(page,c);
   await keyword.fill(q);
 
-  const location=await findVisible(page,[
+  const locationByText=await findInputByPlaceholder(page,/location/i);
+  const location=locationByText||await findVisible(page,[
     'input.suggestor-input[placeholder*="location" i]',
     'input[aria-label="Enter location"]',
     'input[placeholder="Enter location" i]',
