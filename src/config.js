@@ -12,6 +12,9 @@ export const config={
   naukriUrl:process.env.NAUKRI_URL||'https://www.naukri.com',
   headless:bool(process.env.NAUKRI_HEADLESS,false),
   profileDir:path.resolve(process.env.NAUKRI_PROFILE_DIR||'.naukri-profile'),
+  autoLogin:bool(process.env.NAUKRI_AUTO_LOGIN,false),
+  naukriUsername:process.env.NAUKRI_USERNAME||'',
+  naukriPassword:process.env.NAUKRI_PASSWORD||'',
   maxAgeHours:Number(process.env.JOB_MAX_AGE_HOURS||6),
   locations:csv(process.env.JOB_LOCATIONS),
   roles:csv(process.env.JOB_ROLES),
@@ -41,6 +44,8 @@ export function validateConfig(){
   if(config.aiCandidateLimit<config.maxJobsPerRun)console.warn('AI_CANDIDATE_LIMIT is below MAX_JOBS_PER_RUN; increase it to preserve broad AI ranking.');
   if(config.aiEnabled&&!config.aiConsent)console.warn('AI is enabled but AI_CONSENT=false; AI analysis will be skipped.');
   if(config.aiEnabled&&!localAI(config.aiBaseUrl)&&!config.aiApiKey)m.push('AI_API_KEY (required for non-local AI endpoint)');
+  if(config.autoLogin&&!config.naukriUsername)m.push('NAUKRI_USERNAME (required when NAUKRI_AUTO_LOGIN=true)');
+  if(config.autoLogin&&!config.naukriPassword)m.push('NAUKRI_PASSWORD (required when NAUKRI_AUTO_LOGIN=true)');
   if(m.length)throw new Error('Missing or invalid configuration: '+m.join(', '));
   if(!Number.isInteger(config.runEveryMinutes)||config.runEveryMinutes<10)throw new Error('RUN_EVERY_MINUTES must be an integer >= 10.');
 }
