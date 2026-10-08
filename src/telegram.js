@@ -1,4 +1,4 @@
-const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 export async function sendTelegram(c,jobs){
   if(c.dryRun)return;
   for(let i=0;i<jobs.length;i+=5){
