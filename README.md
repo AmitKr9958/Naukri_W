@@ -32,3 +32,19 @@ Mount or copy the resume to the server and set RESUME_PATH accordingly. Use syst
 
 ## Scheduling
 The worker itself checks on an hourly cadence; Windows Task Scheduler adds process recovery/restart resilience.
+
+
+## Optional AI matching
+The watcher can add an LLM-based fit score on top of the deterministic matcher. It uses an OpenAI-compatible endpoint, so it can work with a local 9Router endpoint or a cloud OpenRouter endpoint. The API key is read only from `.env` and is never committed.
+
+Set:
+```
+AI_ENABLED=true
+AI_BASE_URL=http://localhost:20128/v1
+AI_API_KEY=your-local-or-router-key
+AI_MODEL=cc/claude-haiku-4-20250514
+```
+
+The AI receives a redacted resume and redacted job description. Email addresses, phone numbers and obvious address fields are removed before transmission. AI failure does not stop the watcher; the deterministic match score remains available.
+
+For OpenRouter, use its OpenAI-compatible `/api/v1/chat/completions` endpoint and a model available to your account. For 9Router, use its OpenAI-compatible local or cloud endpoint.
