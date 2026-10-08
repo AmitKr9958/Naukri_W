@@ -62,9 +62,18 @@ async function nextPageUrl(page,currentUrl){
   return null;
 }
 
+function findPostedText(raw,preferred){
+  const candidates=[preferred,...String(raw||'').split(/\n+/).map(x=>x.trim())].filter(Boolean);
+  for(const value of candidates){
+    if(parseAgeHours(value)!==null)return value;
+  }
+  return '';
+}
+
 async function extractFreshCards(page,c){
   const fresh=[];
-  const cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').all();
+  const diagnostics=[];
+  const cards=await page.locator('.cust-job-tuple,.srp-jobtuple-wrapper,[data-job-id]').all();
   for(const card of cards.slice(0,50)){
     const raw=await card.innerText().catch(()=>''), anchors=await card.locator('a').all();
     let link=null;
@@ -78,8 +87,10 @@ async function extractFreshCards(page,c){
 
     const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
     const title=(await card.locator('a').first().innerText().catch(()=>'' )).trim()||lines[0]||'';
-    const postedText=await textFromFirst(card,['.job-post-day','.job-posted-date','.job-posted','[class*="job-post-day"]','[class*="posted"]']);
-    const ageHours=parseAgeHours(postedText||raw);
+    const preferredPosted=await textFromFirst(card,['.job-post-day','.job-posted-date','.job-posted','[class*="job-post-day"]','[class*="posted"]']);
+    const postedText=findPostedText(raw,preferredPosted);
+    const ageHours=parseAgeHours(postedText);
+    if(diagnostics.length<5)diagnostics.push({title,postedText:postedText||preferredPosted||'NOT_FOUND',ageHours});
     if(ageHours==null||ageHours>c.maxAgeHours)continue;
 
     const location=await textFromFirst(card,['.locWdth','.loc-wrap [title]','.location','.loc'])||lines.find(x=>c.locations.some(l=>x.toLowerCase().includes(l.toLowerCase())))||'';
@@ -88,7 +99,7 @@ async function extractFreshCards(page,c){
 
     fresh.push({title,company,location,description,url:link,ageHours,postedText});
   }
-  return fresh;
+  return {fresh,diagnostics};
 }
 
 export async function openNaukri(c){
@@ -136,8 +147,9 @@ export async function searchJobs(page,c){
         }
         if(!cards)break;
 
-        const fresh=await extractFreshCards(page,c);
-        for(const job of fresh){
+        const extracted=await extractFreshCards(page,c);
+        if(!extracted.fresh.length)console.warn(JSON.stringify({search:q,location:loc||'ALL',page:pageNo,cards,diagnostics:extracted.diagnostics},null,0));
+        for(const job of extracted.fresh){
           if(!seen.has(job.url)){
             seen.add(job.url);
             out.push(job);
