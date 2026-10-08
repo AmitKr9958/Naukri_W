@@ -41,6 +41,45 @@ function cleanUrl(href){
   catch{return null;}
 }
 
+async function nextPageUrl(page,currentUrl){
+  const next=page.locator('a').filter({hasText:/^\s*next\s*$/i}).first();
+  if(await next.count()){
+    const href=await next.getAttribute('href').catch(()=>null);
+    const url=cleanUrl(href);
+    if(url&&url!==currentUrl)return url;
+  }
+  return null;
+}
+
+async function extractFreshCards(page,c){
+  const fresh=[];
+  const cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').all();
+  for(const card of cards.slice(0,50)){
+    const raw=await card.innerText().catch(()=>''), anchors=await card.locator('a').all();
+    let link=null;
+    for(const a of anchors){
+      const href=await a.getAttribute('href').catch(()=>null);
+      if(href&&/job-listings-|\/job\//i.test(href)){link=href;break}
+    }
+    if(!link&&anchors[0])link=await anchors[0].getAttribute('href').catch(()=>null);
+    link=cleanUrl(link);
+    if(!link)continue;
+
+    const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
+    const title=(await card.locator('a').first().innerText().catch(()=>'' )).trim()||lines[0]||'';
+    const postedText=await textFromFirst(card,['.job-post-day','.job-posted-date','.job-posted','[class*="job-post-day"]','[class*="posted"]']);
+    const ageHours=parseAgeHours(postedText||raw);
+    if(ageHours==null||ageHours>c.maxAgeHours)continue;
+
+    const location=await textFromFirst(card,['.locWdth','.loc-wrap [title]','.location','.loc'])||lines.find(x=>c.locations.some(l=>x.toLowerCase().includes(l.toLowerCase())))||'';
+    const company=await textFromFirst(card,['.comp-name','.companyInfo a','.companyInfo','.comp-name a'])||lines.find(x=>x!==title&&x.length>1&&!/^(save|apply|posted|\d+\s*(minute|min|hour|hr|day|days|d)\b)/i.test(x))||'';
+    const description=await textFromFirst(card,['.job-desc','.job-desc-container'])||raw;
+
+    fresh.push({title,company,location,description,url:link,ageHours,postedText});
+  }
+  return fresh;
+}
+
 export async function openNaukri(c){
   const context=await chromium.launchPersistentContext(c.profileDir,{headless:c.headless,viewport:{width:1440,height:1000}});
   context.setDefaultTimeout(c.actionTimeoutMs);
@@ -55,40 +94,39 @@ export async function ensureLoggedIn(page){
 
 export async function searchJobs(page,c){
   const out=[];
+  const seen=new Set();
+
   for(const q of c.roles.slice(0,8)){
     for(const loc of c.locations.length?c.locations:['']){
-      const url=loc
+      let url=loc
         ? `https://www.naukri.com/${slugify(q)}-jobs-in-${slugify(loc)}?k=${encodeURIComponent(q)}&l=${encodeURIComponent(loc)}`
         : `https://www.naukri.com/${slugify(q)}-jobs?k=${encodeURIComponent(q)}`;
-      await withRetry(()=>page.goto(url,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs}),{retries:c.maxRetries,delayMs:c.retryDelayMs});
-      await page.waitForTimeout(1500);
+      const visitedPages=new Set();
 
-      const cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').all();
-      for(const card of cards.slice(0,50)){
-        const raw=await card.innerText().catch(()=>''), anchors=await card.locator('a').all();
-        let link=null;
-        for(const a of anchors){
-          const href=await a.getAttribute('href').catch(()=>null);
-          if(href&&/job-listings-|\/job\//i.test(href)){link=href;break}
+      for(let pageNo=1;pageNo<=c.maxPagesPerSearch&&url;pageNo++){
+        if(visitedPages.has(url))break;
+        visitedPages.add(url);
+
+        await withRetry(()=>page.goto(url,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs}),{retries:c.maxRetries,delayMs:c.retryDelayMs});
+        await page.waitForTimeout(c.pageDelayMs);
+
+        const cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count();
+        if(!cards)break;
+
+        const fresh=await extractFreshCards(page,c);
+        for(const job of fresh){
+          if(!seen.has(job.url)){
+            seen.add(job.url);
+            out.push(job);
+          }
         }
-        if(!link&&anchors[0])link=await anchors[0].getAttribute('href').catch(()=>null);
-        link=cleanUrl(link);
-        if(!link)continue;
 
-        const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
-        const title=(await card.locator('a').first().innerText().catch(()=>'' )).trim()||lines[0]||'';
-        const postedText=await textFromFirst(card,['.job-post-day','.job-posted-date','.job-posted','[class*="job-post-day"]','[class*="posted"]']);
-        const ageHours=parseAgeHours(postedText||raw);
-        if(ageHours==null||ageHours>c.maxAgeHours)continue;
-
-        const location=await textFromFirst(card,['.locWdth','.loc-wrap [title]','.location','.loc'])||lines.find(x=>c.locations.some(l=>x.toLowerCase().includes(l.toLowerCase())))||loc;
-        const company=await textFromFirst(card,['.comp-name','.companyInfo a','.companyInfo','.comp-name a'])||lines.find(x=>x!==title&&x.length>1&&!/^(save|apply|posted|\d+\s*(minute|min|hour|hr|day|days|d)\b)/i.test(x))||'';
-        const description=await textFromFirst(card,['.job-desc','.job-desc-container'])||raw;
-
-        out.push({title,company,location,description,url:link,ageHours,postedText});
+        const next=pageNo<c.maxPagesPerSearch?await nextPageUrl(page,url):null;
+        if(!next)break;
+        url=next;
       }
     }
   }
-  const s=new Set();
-  return out.filter(j=>!s.has(j.url)&&s.add(j.url));
+
+  return out;
 }
