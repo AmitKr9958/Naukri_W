@@ -5,7 +5,7 @@ const localAI=url=>/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(?:\/|$)/i.test(u
 const positiveInt=(v,d)=>{const n=Number(v);return Number.isInteger(n)&&n>0?n:d;};
 export const config={
   tz:process.env.TZ||'Asia/Kolkata',
-  runEveryMinutes:Number(process.env.RUN_EVERY_MINUTES||10),
+  runEveryMinutes:Number(process.env.RUN_EVERY_MINUTES||30),
   runOnStart:bool(process.env.RUN_ON_START,true),
   dryRun:bool(process.env.DRY_RUN,true),
   resumePath:process.env.RESUME_PATH||'',
