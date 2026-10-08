@@ -16,9 +16,22 @@ function parseAgeHours(raw){
 
 function cleanUrl(href){
   if(!href)return null;
-  try{
-    return new URL(href,'https://www.naukri.com').href.split('#')[0];
-  }catch{return null;}
+  try{return new URL(href,'https://www.naukri.com').href.split('#')[0];}
+  catch{return null;}
+}
+
+async function applyFreshness(page){
+  const button=page.locator('#filter-freshness');
+  if(await button.count()){
+    await button.click().catch(()=>{});
+    const option=page.locator('a[data-id="filter-freshness-1"]');
+    if(await option.count()){
+      await option.click().catch(()=>{});
+      await page.waitForTimeout(1200);
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function openNaukri(c){
@@ -42,6 +55,7 @@ export async function searchJobs(page,c){
         : `https://www.naukri.com/${slugify(q)}-jobs?k=${encodeURIComponent(q)}`;
       await withRetry(()=>page.goto(url,{waitUntil:'domcontentloaded',timeout:c.navigationTimeoutMs}),{retries:c.maxRetries,delayMs:c.retryDelayMs});
       await page.waitForTimeout(1000);
+      await applyFreshness(page);
       const cards=await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').all();
       for(const card of cards.slice(0,50)){
         const raw=await card.innerText().catch(()=>''), anchors=await card.locator('a').all();
@@ -58,7 +72,7 @@ export async function searchJobs(page,c){
         const ageHours=parseAgeHours(raw);
         if(ageHours==null||ageHours>c.maxAgeHours)continue;
         const location=lines.find(x=>c.locations.some(l=>x.toLowerCase().includes(l.toLowerCase())))||loc;
-        const company=lines.find(x=>x!==title&&x.length>1&& !/^(save|apply|posted|\d+\s*(minute|min|hour|hr|day|days|d)\b)/i.test(x))||'';
+        const company=lines.find(x=>x!==title&&x.length>1&&!/^(save|apply|posted|\d+\s*(minute|min|hour|hr|day|days|d)\b)/i.test(x))||'';
         out.push({title,company,location,description:raw,url:link,ageHours});
       }
     }
