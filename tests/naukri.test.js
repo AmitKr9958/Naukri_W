@@ -15,4 +15,8 @@ test('keeps strict freshness parsing',()=>{
   assert.equal(parseAgeHours('30 minutes ago'),0.5);
   assert.equal(parseAgeHours('6 hours ago'),6);
   assert.equal(parseAgeHours('1 day ago'),24);
+  assert.equal(parseAgeHours('3+ weeks ago'),504);
+  assert.equal(parseAgeHours('3+ days ago'),72);
+  assert.equal(parseAgeHours('2weeks ago'),336);
+  assert.equal(parseAgeHours('not available'),null);
 });
