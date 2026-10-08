@@ -133,58 +133,57 @@ async function findInputByPlaceholder(page,pattern){
   return null;
 }
 
-async function waitForSearchInputs(page,c){
-  const selectors=[
-    'input.suggestor-input',
+async function findNaukriSearchInput(page,kind){
+  const selectors=kind==='keyword'?[
+    'input[placeholder="Enter keyword / designation / companies"]',
     'input[aria-label="Enter keyword, designation, or companies"]',
-    'input[placeholder*="Enter keyword / designation / companies" i]',
-    'input[placeholder*="Enter location" i]',
-    '.nI-gNb-sb__icon-wrapper[aria-label="Search"]',
-    'button[aria-label="Search"]'
+    'input.suggestor-input'
+  ]:[
+    'input[placeholder="Enter location"]',
+    'input[aria-label="Enter location"]',
+    'input.suggestor-input'
   ];
-  const timeout=Math.max(8000,c.navigationTimeoutMs);
   for(const selector of selectors){
-    const loc=page.locator(selector).first();
-    try{
-      await loc.waitFor({state:'visible',timeout:Math.min(timeout,8000)});
-    }catch{}
+    const inputs=await page.locator(selector).all();
+    for(const input of inputs){
+      if(!await input.isVisible().catch(()=>false))continue;
+      const placeholder=(await input.getAttribute('placeholder').catch(()=>''))||'';
+      const aria=(await input.getAttribute('aria-label').catch(()=>''))||'';
+      if(kind==='keyword'&&(/keyword|designation|companies/i.test(placeholder)||/keyword|designation|companies/i.test(aria)))return input;
+      if(kind==='location'&&(/location/i.test(placeholder)||/location/i.test(aria)))return input;
+    }
   }
+  return null;
 }
 
 async function openSearchForm(page,c){
-  await waitForSearchInputs(page,c);
-  let keyword=await findInputByPlaceholder(page,/keyword|designation|companies/i);
-  if(keyword)return keyword;
+  await page.waitForLoadState('domcontentloaded').catch(()=>{});
+  const deadline=Date.now()+Math.min(Math.max(c.navigationTimeoutMs,10000),20000);
 
-  keyword=await findVisible(page,[
-    'input.suggestor-input',
-    'input[aria-label="Enter keyword, designation, or companies"]',
-    'input[placeholder*="Enter keyword / designation / companies" i]',
-    'input[name="qp"]',
-    'input[placeholder*="Skills, Designations, Companies" i]'
-  ]);
-  if(keyword)return keyword;
+  while(Date.now()<deadline){
+    let keyword=await findNaukriSearchInput(page,'keyword');
+    if(keyword){
+      await keyword.scrollIntoViewIfNeeded().catch(()=>{});
+      return keyword;
+    }
 
-  const trigger=await findVisible(page,[
-    'input[placeholder*="Search jobs here" i]',
-    'text=Search jobs here',
-    '[aria-label*="search" i]',
-    'button:has-text("Search Jobs")',
-    'button:has-text("Search")'
-  ]);
-  if(trigger)await trigger.click().catch(()=>{});
-  await page.waitForTimeout(750);
+    const expand=await findVisible(page,['.nI-gNb-sb__expand[aria-label="Search jobs here"]','button[aria-label="Search jobs here"]']);
+    if(expand)await expand.click().catch(()=>{});
+    await page.waitForTimeout(500);
+  }
 
-  keyword=await findVisible(page,[
-    'input.suggestor-input',
-    'input[aria-label="Enter keyword, designation, or companies"]',
-    'input[placeholder*="Enter keyword / designation / companies" i]',
-    'input[name="qp"]',
-    'input[placeholder*="Skills, Designations, Companies" i]'
-  ]);
-  if(!keyword)throw new Error('Naukri search form is unavailable. The logged-in homepage did not expose a visible keyword search input.');
-  return keyword;
+  throw new Error('Naukri search form is unavailable. The logged-in homepage did not expose the keyword search input.');
 }
+
+async function fillNaukriField(field,value){
+  await field.scrollIntoViewIfNeeded().catch(()=>{});
+  await field.click({force:true});
+  await field.fill('');
+  await field.fill(value);
+  await field.press('ArrowDown').catch(()=>{});
+  await field.press('Enter').catch(()=>{});
+}
+
 
 async function selectSortByDate(page){
   try{
@@ -225,18 +224,11 @@ async function runSearchFromHomepage(page,c,q,loc){
   }
 
   const keyword=await openSearchForm(page,c);
-  await keyword.fill(q);
+  await fillNaukriField(keyword,q);
 
-  const locationByText=await findInputByPlaceholder(page,/location/i);
-  const location=locationByText||await findVisible(page,[
-    'input.suggestor-input[placeholder*="location" i]',
-    'input[aria-label="Enter location"]',
-    'input[placeholder="Enter location" i]',
-    'input[name="ql"]',
-    'input[placeholder*="location" i]'
-  ]);
+  const location=await findNaukriSearchInput(page,'location');
   if(!location)throw new Error('Naukri location search field is unavailable.');
-  await location.fill(loc);
+  await fillNaukriField(location,loc);
 
   const searchButton=await findVisible(page,[
     'button[aria-label="Search"]',
