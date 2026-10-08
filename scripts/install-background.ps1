@@ -8,7 +8,8 @@ if (-not (Test-Path (Join-Path $root ".env"))) {
 
 $taskName = "Naukri Hourly Job Watcher"
 $entry = Join-Path $root "src\index.js"
-$action = New-ScheduledTaskAction -Execute $node -Argument ("`"" + $entry + "`"") -WorkingDirectory $root
+$runner = Join-Path $root "scripts\run-background.ps1"
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ("-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$runner`"") -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 10) -ExecutionTimeLimit (New-TimeSpan -Days 1)
 
