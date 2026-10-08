@@ -133,6 +133,7 @@ async function openSearchForm(page,c){
 
   const trigger=await findVisible(page,[
     'input[placeholder*="Search jobs here" i]',
+    'text=Search jobs here',
     '[aria-label*="search" i]',
     'button:has-text("Search Jobs")',
     'button:has-text("Search")'
@@ -147,6 +148,19 @@ async function openSearchForm(page,c){
   ]);
   if(!keyword)throw new Error('Naukri search form is unavailable. Open Naukri in Chrome and verify the homepage search box is working.');
   return keyword;
+}
+
+async function selectSortByDate(page){
+  try{
+    const sort=page.getByText('Sort by:',{exact:false}).first();
+    if(await sort.count())await sort.click().catch(()=>{});
+    await page.waitForTimeout(250);
+    const date=page.getByText('Date',{exact:true}).first();
+    if(await date.count()&&await date.isVisible().catch(()=>false)){
+      await date.click().catch(()=>{});
+      await page.waitForTimeout(1000);
+    }
+  }catch{}
 }
 
 async function selectFreshnessLastDay(page){
@@ -203,6 +217,7 @@ async function runSearchFromHomepage(page,c,q,loc){
     throw new Error('Naukri search returned its "Oops! Something went wrong" page even when submitted through the homepage search form.');
   }
 
+  await selectSortByDate(page);
   await selectFreshnessLastDay(page);
   return page.url();
 }
