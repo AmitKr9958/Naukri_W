@@ -24,17 +24,24 @@ async function runOnce(){
   try{
     await ensureLoggedIn(page);
     const candidates=await searchJobs(page,config);
-    let matches=candidates
+    let pool=candidates
       .map(j=>({...j,...scoreJob(j,profile)}))
-      .filter(j=>j.score>=config.minMatchScore&&!seen.has(j.url))
+      .filter(j=>!seen.has(j.url))
       .sort((a,b)=>b.score-a.score)
       .slice(0,config.maxJobsPerRun);
-    if(config.aiEnabled) matches=await analyzeJobs(config,matches,resume.text);
-    matches.sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
+
+    if(config.aiEnabled&&config.aiConsent) pool=await analyzeJobs(config,pool,resume.text);
+
+    let matches=pool
+      .filter(j=>config.aiEnabled&&config.aiConsent
+        ? (j.relevant===true&&j.finalScore>=config.minMatchScore)
+        : j.score>=config.minMatchScore)
+      .sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
+
+    if(matches.length)await sendTelegram(config,matches);
     for(const j of candidates)seen.add(j.url);
     await saveSeen(seen);
-    if(matches.length)await sendTelegram(config,matches);
-    logger.info({candidates:candidates.length,matches:matches.length,durationMs:Date.now()-start},'Run complete');
+    logger.info({candidates:candidates.length,scored:pool.length,matches:matches.length,durationMs:Date.now()-start},'Run complete');
   }finally{await context.close().catch(()=>{})}
 }
 
