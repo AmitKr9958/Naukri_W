@@ -4,6 +4,9 @@ const tokens=s=>new Set(norm(s).split(/[^a-z0-9+#.-]+/).filter(x=>x.length>1));
 const roleSignals=[
   ['power bi',18],
   ['business intelligence',18],
+  ['business intelligence analyst',18],
+  ['data analytics specialist',18],
+  ['data analyst',18],
   ['bi ',12],
   ['data analytics',12],
   ['reporting',10],
