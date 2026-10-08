@@ -12,21 +12,24 @@ $envText = Get-Content $envFile -Raw
 if ($envText -notmatch '(?m)^DRY_RUN=false\s*$') {
   throw "Production install requires DRY_RUN=false after Telegram credentials are configured."
 }
-
+if ($envText -notmatch '(?m)^NAUKRI_HEADLESS=true\s*$') {
+  throw "Production install requires NAUKRI_HEADLESS=true."
+}
 if ($envText -notmatch '(?m)^TELEGRAM_BOT_TOKEN=.+$' -or $envText -match '(?m)^TELEGRAM_BOT_TOKEN=\s*$') {
   throw "TELEGRAM_BOT_TOKEN is missing."
 }
-
 if ($envText -notmatch '(?m)^TELEGRAM_CHAT_ID=.+$' -or $envText -match '(?m)^TELEGRAM_CHAT_ID=\s*$') {
   throw "TELEGRAM_CHAT_ID is missing."
+}
+if ($envText -match '(?m)^AI_ENABLED=true\s*$' -and $envText -notmatch '(?m)^AI_CONSENT=true\s*$') {
+  throw "AI_ENABLED=true requires AI_CONSENT=true."
 }
 
 $taskName = "Naukri Hourly Job Watcher"
 $runner = Join-Path $root "scripts\run-background.ps1"
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$runner`"" -WorkingDirectory $root
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"') -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 10)
-
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description "Hourly Naukri job watcher with Telegram alerts" -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
 
