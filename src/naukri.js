@@ -41,6 +41,17 @@ function cleanUrl(href){
   catch{return null;}
 }
 
+export function nextSearchPageUrl(currentUrl,links){
+  for(const item of links){
+    const href=typeof item==='string'?item:item?.href;
+    const text=typeof item==='string'?'':item?.text;
+    if(text&&!/^\\s*next\\s*$/i.test(text))continue;
+    const url=cleanUrl(href);
+    if(url&&url!==currentUrl)return url;
+  }
+  return null;
+}
+
 async function nextPageUrl(page,currentUrl){
   const next=page.locator('a').filter({hasText:/^\s*next\s*$/i}).first();
   if(await next.count()){
