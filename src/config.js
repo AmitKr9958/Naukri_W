@@ -26,7 +26,8 @@ export const config={
   maxRetries:Number(process.env.MAX_RETRIES||3),
   retryDelayMs:Number(process.env.RETRY_DELAY_MS||5000),
   navigationTimeoutMs:Number(process.env.NAVIGATION_TIMEOUT_MS||45000),
-  actionTimeoutMs:Number(process.env.ACTION_TIMEOUT_MS||20000)
+  actionTimeoutMs:Number(process.env.ACTION_TIMEOUT_MS||20000),
+  httpTimeoutMs:Number(process.env.HTTP_TIMEOUT_MS||30000)
 };
 export function validateConfig(){
   const m=[];
