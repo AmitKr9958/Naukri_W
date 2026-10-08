@@ -594,12 +594,24 @@ export async function searchJobs(page, c) {
   const out = [];
   const seen = new Set();
 
-  for (const q of c.roles.slice(0, 8)) {
-    for (const loc of c.locations.length ? c.locations : ['']) {
+  // Search broadly, then let the deterministic matcher + AI do the precise role fit.
+  // This avoids repeatedly searching near-identical Naukri result sets for
+  // Power BI Developer/Lead/Engineer/Consultant separately.
+  const searchQueries = [...new Set((c.searchQueries || c.roles).map(x => String(x).trim()).filter(Boolean))].slice(0, 4);
+  // Gurgaon and Gurugram are the same target for this watcher; searching both
+  // produces almost identical Naukri pages and wastes a full search cycle.
+  const searchLocations = [...new Map((c.locations.length ? c.locations : ['']).map(loc => {
+    const key = String(loc).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const canonical = key === 'gurugram' ? 'gurgaon' : key;
+    return [canonical, loc];
+  })).values()];
+
+  for (const q of searchQueries) {
+    for (const loc of searchLocations) {
       let url = await runSearchFromHomepage(page, c, q, loc);
       const visitedPages = new Set();
 
-      for (let pageNo = 1; pageNo <= c.maxPagesPerSearch && url; pageNo++) {
+      for (let pageNo = 1; pageNo <= Math.min(c.maxPagesPerSearch, 3) && url; pageNo++) {
         if (visitedPages.has(url)) break;
         visitedPages.add(url);
 
@@ -690,7 +702,7 @@ export async function searchJobs(page, c) {
           break;
         }
 
-        const next = pageNo < c.maxPagesPerSearch ? await nextPageUrl(page, url) : null;
+        const next = pageNo < Math.min(c.maxPagesPerSearch, 3) ? await nextPageUrl(page, url) : null;
         if (!next) break;
         await page.goto(next, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
         await page.waitForTimeout(c.pageDelayMs);
