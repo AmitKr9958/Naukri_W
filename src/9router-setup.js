@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 
 const appData=process.env.APPDATA||path.join(os.homedir(),'AppData','Roaming');
 const dbPath=path.join(appData,'9router','db','data.sqlite');
-const sqlitePath=path.join(appData,'npm','node_modules','9router','runtime','node_modules','better-sqlite3');
+const sqlitePath=path.join(appData,'9router','runtime','node_modules','better-sqlite3');
 
 if(!fs.existsSync(dbPath)) throw new Error('9Router database not found: '+dbPath);
 if(!fs.existsSync(sqlitePath)) throw new Error('9Router SQLite driver not found: '+sqlitePath);
