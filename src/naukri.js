@@ -128,19 +128,80 @@ async function extractFreshCards(page, c) {
   return {fresh, diagnostics};
 }
 
-export async function openNaukri(c) {
+function isAccessDeniedPage(title, body, url) {
+  const t = String(title || '');
+  const b = String(body || '').slice(0, 4000);
+  const u = String(url || '');
+  return (
+    /access\s*denied/i.test(t) ||
+    /access\s*denied/i.test(b) ||
+    /you don.?t have permission to access/i.test(b) ||
+    /errors\.edgesuite\.net/i.test(b) ||
+    /reference\s*#\s*[\w.]+/i.test(b) && /permission/i.test(b)
+  );
+}
+
+export async function assertNaukriReachable(page) {
+  const title = await page.title().catch(() => '');
+  const body = (await page.locator('body').innerText().catch(() => '')).slice(0, 4000);
+  const url = page.url();
+  if (isAccessDeniedPage(title, body, url)) {
+    throw new Error(
+      'Naukri returned Access Denied (bot/edge protection). ' +
+        'This is not a search-form bug — the real homepage never loaded. ' +
+        'Fix: 1) Set NAUKRI_HEADLESS=false  2) Prefer system Chrome (default)  ' +
+        '3) Run npm run login and complete any challenge manually in the opened window  ' +
+        '4) If it keeps happening, delete the .naukri-profile folder and login again from your normal network. ' +
+        `title=${JSON.stringify(title)} url=${url}`
+    );
+  }
+}
+
+async function launchContext(c) {
   const chromium = await getChromium();
-  const context = await chromium.launchPersistentContext(c.profileDir, {
+  // Prefer installed Google Chrome — Chromium is blocked by Naukri/Akamai much more often.
+  const base = {
     headless: c.headless,
-    viewport: {width: 1440, height: 1000},
-    args: ['--disable-blink-features=AutomationControlled']
-  });
+    viewport: {width: 1440, height: 900},
+    locale: 'en-IN',
+    timezoneId: 'Asia/Kolkata',
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--no-sandbox',
+      '--disable-dev-shm-usage'
+    ],
+    ignoreDefaultArgs: ['--enable-automation']
+  };
+
+  try {
+    return await chromium.launchPersistentContext(c.profileDir, {
+      ...base,
+      channel: 'chrome'
+    });
+  } catch (e) {
+    // Fallback to bundled Chromium if Chrome is not installed
+    console.warn(
+      JSON.stringify({
+        msg: 'System Chrome not available; falling back to Chromium (more likely to hit Access Denied)',
+        error: String(e?.message || e)
+      })
+    );
+    return await chromium.launchPersistentContext(c.profileDir, base);
+  }
+}
+
+export async function openNaukri(c) {
+  const context = await launchContext(c);
   context.setDefaultTimeout(c.actionTimeoutMs);
   const page = context.pages()[0] || (await context.newPage());
   await withRetry(
     () => page.goto(c.naukriUrl, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs}),
     {retries: c.maxRetries, delayMs: c.retryDelayMs}
   );
+  await page.waitForTimeout(1500);
+  await assertNaukriReachable(page);
   return {context, page};
 }
 
@@ -335,6 +396,7 @@ async function findNaukriSearchInput(page, kind) {
 
 async function openSearchForm(page, c) {
   await page.waitForLoadState('domcontentloaded').catch(() => {});
+  await assertNaukriReachable(page);
   await dismissOverlays(page);
 
   // Give React / global-nav time to paint the search bar
@@ -428,6 +490,7 @@ async function runSearchFromHomepage(page, c, q, loc) {
     {retries: c.maxRetries, delayMs: c.retryDelayMs}
   );
   await page.waitForTimeout(c.pageDelayMs);
+  await assertNaukriReachable(page);
   await dismissOverlays(page);
 
   const body = (await page.locator('body').innerText().catch(() => '')).slice(0, 12000);
