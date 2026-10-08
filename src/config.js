@@ -5,7 +5,7 @@ const localAI=url=>/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(?:\/|$)/i.test(u
 const positiveInt=(v,d)=>{const n=Number(v);return Number.isInteger(n)&&n>0?n:d;};
 export const config={
   tz:process.env.TZ||'Asia/Kolkata',
-  runEveryMinutes:Number(process.env.RUN_EVERY_MINUTES||60),
+  runEveryMinutes:Number(process.env.RUN_EVERY_MINUTES||10),
   runOnStart:bool(process.env.RUN_ON_START,true),
   dryRun:bool(process.env.DRY_RUN,true),
   resumePath:process.env.RESUME_PATH||'',
@@ -42,5 +42,5 @@ export function validateConfig(){
   if(config.aiEnabled&&!config.aiConsent)console.warn('AI is enabled but AI_CONSENT=false; AI analysis will be skipped.');
   if(config.aiEnabled&&!localAI(config.aiBaseUrl)&&!config.aiApiKey)m.push('AI_API_KEY (required for non-local AI endpoint)');
   if(m.length)throw new Error('Missing or invalid configuration: '+m.join(', '));
-  if(config.runEveryMinutes<60)throw new Error('RUN_EVERY_MINUTES must be >= 60.');
+  if(!Number.isInteger(config.runEveryMinutes)||config.runEveryMinutes<10)throw new Error('RUN_EVERY_MINUTES must be an integer >= 10.');
 }
