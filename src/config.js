@@ -18,6 +18,7 @@ export const config={
   maxAgeHours:Number(process.env.JOB_MAX_AGE_HOURS||6),
   locations:csv(process.env.JOB_LOCATIONS),
   roles:csv(process.env.JOB_ROLES),
+  searchQueries:csv(process.env.JOB_SEARCH_QUERIES).length ? csv(process.env.JOB_SEARCH_QUERIES) : ['Power BI','Data Analyst','Business Intelligence','Reporting Analyst'],
   minMatchScore:Number(process.env.MIN_MATCH_SCORE||60),
   maxJobsPerRun:positiveInt(process.env.MAX_JOBS_PER_RUN,15),
   aiCandidateLimit:positiveInt(process.env.AI_CANDIDATE_LIMIT,30),
