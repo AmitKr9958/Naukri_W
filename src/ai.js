@@ -28,7 +28,7 @@ export async function analyzeJobs(c,jobs,resumeText){
         {role:'system',content:'You are a strict job-matching evaluator. Return valid JSON only. Judge fit against the candidate resume, not generic desirability. Do not infer private information.'},
         {role:'user',content:JSON.stringify({
           resume,
-          job:{title:job.title,company:job.company,location:job.location,description:clip(job.description)},
+          job:{title:redact(job.title),company:redact(job.company),location:redact(job.location),description:redactForAI(job.description)},
           task:'Evaluate this job for the candidate. Return JSON: relevant (boolean), fit (0-100), roleFit (0-100), reason (one short sentence), missing (up to 3 skills). Relevant must be false for a clearly unrelated role even if transferable skills exist.'
         })}
       ],temperature:0.1,max_tokens:260};
@@ -48,7 +48,7 @@ export async function analyzeJobs(c,jobs,resumeText){
       const finalScore=relevant?Math.round(job.score*0.4+aiFit*0.45+roleFit*0.15):Math.min(job.score,Math.round(aiFit*0.4));
       results.push({...job,relevant,aiFit,roleFit,aiReason:String(parsed.reason||''),aiMissing:Array.isArray(parsed.missing)?parsed.missing.slice(0,3):[],finalScore});
     }catch{
-      results.push({...job,relevant:null,aiFit:null,roleFit:null,aiReason:'AI analysis unavailable; rule-based score retained.',aiMissing:[],finalScore:job.score});
+      results.push({...job,relevant:null,aiFit:null,roleFit:null,aiReason:'AI unavailable; rule-based score retained.',aiMissing:[],finalScore:job.score});
     }
   }
   return results;
