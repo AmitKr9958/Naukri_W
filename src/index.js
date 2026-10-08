@@ -41,6 +41,8 @@ async function runOnce(){
       .sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
 
     if(matches.length)await sendTelegram(config,matches);
+    // Mark jobs seen only after notification succeeds. If Telegram fails,
+    // the jobs remain eligible for the next hourly run instead of being lost.
     for(const j of candidates)seen.add(j.url);
     await saveSeen(seen);
     logger.info({candidates:candidates.length,scored:pool.length,matches:matches.length,durationMs:Date.now()-start},'Run complete');
