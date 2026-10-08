@@ -26,9 +26,18 @@ async function runOnce(){
     await ensureLoggedIn(page,config);
     const candidates=await searchJobs(page,config);
     const unseen=candidates.filter(j=>!seen.has(j.url));
+    const alreadySeen=candidates.length-unseen.length;
     const scored=unseen.map(j=>({...j,...scoreJob(j,profile)})).sort((a,b)=>b.score-a.score);
     const aiEnabled=config.aiEnabled&&config.aiConsent;
     let pool=aiEnabled?scored.slice(0,config.aiCandidateLimit):scored.slice(0,config.maxJobsPerRun);
+    logger.info({
+      freshCandidates:candidates.length,
+      unseenCandidates:unseen.length,
+      alreadySeen,
+      ruleScoreCandidates:scored.length,
+      aiEnabled,
+      aiPoolBeforeAnalysis:pool.length
+    },'Pipeline candidates');
     if(aiEnabled)pool=await analyzeJobs(config,pool,resume.text);
     const ranked=pool.filter(j=>{
       const score=j.finalScore??j.score;
@@ -39,7 +48,16 @@ async function runOnce(){
     if(matches.length)await sendTelegram(config,matches);
     for(const j of candidates)seen.add(j.url);
     await saveSeen(seen);
-    logger.info({candidates:candidates.length,unseen:unseen.length,aiCandidates:aiEnabled?pool.length:0,matches:matches.length,durationMs:Date.now()-start},'Run complete');
+    logger.info({
+      candidates:candidates.length,
+      unseen:unseen.length,
+      alreadySeen,
+      ruleScoreCandidates:scored.length,
+      aiCandidates:aiEnabled?pool.length:0,
+      aiRelevant:aiEnabled?pool.filter(j=>j.relevant!==false).length:0,
+      matches:matches.length,
+      durationMs:Date.now()-start
+    },'Run complete');
   }finally{await context.close().catch(()=>{})}
 }
 
