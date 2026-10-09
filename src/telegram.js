@@ -1,10 +1,15 @@
 import {withRetry} from './retry.js';
+import {logger} from './logger.js';
 
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const escAttr=s=>esc(s).replace(/'/g,'&#39;');
 
 export async function sendTelegram(c,jobs){
-  if(c.dryRun)return;
+  if(c.dryRun){
+    logger.info({jobs:jobs.length,dryRun:true},'Telegram delivery skipped in dry-run mode');
+    return;
+  }
+  logger.info({jobs:jobs.length,dryRun:false},'Sending Telegram job alerts');
   for(let i=0;i<jobs.length;i+=5){
     const text=(i===0?'<b>Naukri matches — last 6 hours</b>\n\n':'')+jobs.slice(i,i+5).map(j=>{
       const score=j.finalScore??j.score;
@@ -17,6 +22,7 @@ export async function sendTelegram(c,jobs){
         const detail=await r.text().catch(()=>'');
         throw new Error('Telegram error '+r.status+(detail?' '+detail.slice(0,300):''));
       }
+      logger.info({batchStart:i+1,batchSize:Math.min(5,jobs.length-i)},'Telegram batch delivered');
     },{retries:2,delayMs:c.retryDelayMs});
   }
 }
