@@ -83,10 +83,10 @@ export function remoteJobMatchesPreferredLocation(job, locations = []) {
   const text = String([job?.title, job?.company, job?.location, job?.description].filter(Boolean).join(' ')).toLowerCase();
   const configured = locations.map(value => String(value).toLowerCase().replace(/[^a-z]/g, ''));
   const has = (names) => configured.some(value => names.includes(value));
-  if (has(['delhi']) && /\\bdelhi\\b/.test(text)) return true;
-  if (has(['gurgaon', 'gurugram']) && /\\b(gurgaon|gurugram)\\b/.test(text)) return true;
-  if (has(['noida']) && /\\bnoida\\b/.test(text)) return true;
-  if (has(['jaipur']) && /\\bjaipur\\b/.test(text)) return true;
+  if (has(['delhi']) && /\bdelhi\b/.test(text)) return true;
+  if (has(['gurgaon', 'gurugram']) && /\b(gurgaon|gurugram)\b/.test(text)) return true;
+  if (has(['noida']) && /\bnoida\b/.test(text)) return true;
+  if (has(['jaipur']) && /\bjaipur\b/.test(text)) return true;
   return false;
 }
 
