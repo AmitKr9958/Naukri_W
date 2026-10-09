@@ -560,8 +560,9 @@ async function runSearchFromHomepage(page, c, q, loc) {
   if (!location) throw new Error('Naukri location search field is unavailable after keyword fill.');
   await fillNaukriField(location, loc);
 
-  const searchButton = await findVisible(page, [
+  const searchSelectors = [
     'button[aria-label="Search"]',
+    '[aria-label="Search jobs here"]',
     '.nI-gNb-sb__icon-wrapper[aria-label="Search"]',
     '.nI-gNb-sb__icon-wrapper',
     '#qsbFormBtn',
@@ -570,10 +571,26 @@ async function runSearchFromHomepage(page, c, q, loc) {
     'button:has-text("Search")',
     'input[type="submit"]',
     '[class*="search"] button'
-  ]);
-  if (!searchButton) throw new Error('Naukri search button is unavailable.');
-
-  await searchButton.click({force: true});
+  ];
+  let searchButton = await findVisible(page, searchSelectors);
+  if (searchButton) {
+    await searchButton.click({force: true});
+  } else {
+    // Naukri sometimes hides/replaces the button after selecting a location suggestion.
+    // Try submitting the already-filled search form with Enter before failing the cycle.
+    console.warn(JSON.stringify({
+      search: q,
+      location: loc || 'ALL',
+      message: 'Search button not visible; trying Enter-key form submission'
+    }));
+    await location.press('Enter').catch(() => {});
+    await page.waitForTimeout(Math.max(2000, c.pageDelayMs));
+    let resultCount = await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count().catch(() => 0);
+    if (!resultCount) {
+      searchButton = await findVisible(page, searchSelectors);
+      if (searchButton) await searchButton.click({force: true}).catch(() => {});
+    }
+  }
   await page.waitForTimeout(Math.max(2000, c.pageDelayMs));
 
   // Wait for either results or an error page
@@ -582,6 +599,15 @@ async function runSearchFromHomepage(page, c, q, loc) {
       timeout: 15000
     })
     .catch(() => {});
+
+  const resultCountAfterSubmit = await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count().catch(() => 0);
+  if (!resultCountAfterSubmit) {
+    const inputs = await collectInputDiagnostics(page);
+    throw new Error(
+      'Naukri search did not produce job cards after button/Enter submission. ' +
+      `search=${JSON.stringify(q)} location=${JSON.stringify(loc)} url=${page.url()} inputs=${JSON.stringify(inputs)}`
+    );
+  }
 
   const resultBody = (await page.locator('body').innerText().catch(() => '')).slice(0, 12000);
   if (/Oops! Something went wrong/i.test(resultBody)) {
