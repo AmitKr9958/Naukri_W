@@ -603,9 +603,23 @@ async function runSearchFromHomepage(page, c, q, loc) {
   const resultCountAfterSubmit = await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count().catch(() => 0);
   if (!resultCountAfterSubmit) {
     const inputs = await collectInputDiagnostics(page);
+    const title = await page.title().catch(() => '');
+    const body = (await page.locator('body').innerText().catch(() => '')).replace(/\\s+/g, ' ').slice(0, 1800);
+    const pageUrl = page.url();
+    const pageKind = /captcha|security verification|verify you are human|robot/i.test(body)
+      ? 'verification-required'
+      : /access denied|errors\\.edgesuite\\.net|permission to access/i.test(title + ' ' + body)
+        ? 'access-denied'
+        : /oops! something went wrong/i.test(body)
+          ? 'naukri-error-page'
+          : /no jobs found|did not find any jobs|no results/i.test(body)
+            ? 'no-results'
+            : 'unknown-results-page';
     throw new Error(
-      'Naukri search did not produce job cards after button/Enter submission. ' +
-      `search=${JSON.stringify(q)} location=${JSON.stringify(loc)} url=${page.url()} inputs=${JSON.stringify(inputs)}`
+      'Naukri search returned no recognized job cards. ' +
+      `pageKind=${pageKind} search=${JSON.stringify(q)} location=${JSON.stringify(loc)} ` +
+      `title=${JSON.stringify(title)} url=${pageUrl} bodyExcerpt=${JSON.stringify(body)} ` +
+      `inputs=${JSON.stringify(inputs)}`
     );
   }
 
