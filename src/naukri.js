@@ -78,6 +78,18 @@ function findPostedText(raw, preferred) {
   return '';
 }
 
+// Remote jobs are only eligible when the listing itself mentions one of the configured target cities.
+export function remoteJobMatchesPreferredLocation(job, locations = []) {
+  const text = String([job?.title, job?.company, job?.location, job?.description].filter(Boolean).join(' ')).toLowerCase();
+  const configured = locations.map(value => String(value).toLowerCase().replace(/[^a-z]/g, ''));
+  const has = (names) => configured.some(value => names.includes(value));
+  if (has(['delhi']) && /\\bdelhi\\b/.test(text)) return true;
+  if (has(['gurgaon', 'gurugram']) && /\\b(gurgaon|gurugram)\\b/.test(text)) return true;
+  if (has(['noida']) && /\\bnoida\\b/.test(text)) return true;
+  if (has(['jaipur']) && /\\bjaipur\\b/.test(text)) return true;
+  return false;
+}
+
 async function extractFreshCards(page, c) {
   const fresh = [];
   let rejectedByFreshness = 0;
@@ -619,7 +631,10 @@ export async function searchJobs(page, c) {
   const searchQueries = [...new Set((c.searchQueries || c.roles).map(x => String(x).trim()).filter(Boolean))].slice(0, 4);
   // Gurgaon and Gurugram are the same target for this watcher; searching both
   // produces almost identical Naukri pages and wastes a full search cycle.
-  const searchLocations = [...new Map((c.locations.length ? c.locations : ['']).map(loc => {
+  const configuredLocations = c.locations.length ? [...c.locations] : [''];
+  // Add a separate Remote search; remote results are gated below against the preferred cities.
+  if (!configuredLocations.some(loc => /^remote$/i.test(String(loc).trim()))) configuredLocations.push('Remote');
+  const searchLocations = [...new Map(configuredLocations.map(loc => {
     const key = String(loc).toLowerCase().replace(/[^a-z0-9]/g, '');
     const canonical = key === 'gurugram' ? 'gurgaon' : key;
     return [canonical, loc];
@@ -668,7 +683,13 @@ export async function searchJobs(page, c) {
         }
 
         const extracted = await extractFreshCards(page, c);
-        if (!extracted.fresh.length) {
+        const isRemoteSearch = /^remote$/i.test(String(loc).trim());
+        const eligibleFresh = isRemoteSearch
+          ? extracted.fresh.filter(job => remoteJobMatchesPreferredLocation(job, c.locations))
+          : extracted.fresh;
+        const rejectedByRemoteLocation = extracted.fresh.length - eligibleFresh.length;
+
+        if (!eligibleFresh.length) {
           console.warn(
             JSON.stringify(
               {
@@ -676,8 +697,10 @@ export async function searchJobs(page, c) {
                 location: loc || 'ALL',
                 page: pageNo,
                 cards,
-                freshCards: extracted.fresh.length,
+                freshCards: eligibleFresh.length,
+                freshnessQualifiedCards: extracted.fresh.length,
                 rejectedByFreshness: extracted.rejectedByFreshness,
+                rejectedByRemoteLocation,
                 diagnostics: extracted.diagnostics
               },
               null,
@@ -692,15 +715,17 @@ export async function searchJobs(page, c) {
             page: pageNo,
             cards,
             uniqueCards: extracted.uniqueCards,
-            freshCards: extracted.fresh.length,
+            freshCards: eligibleFresh.length,
+            freshnessQualifiedCards: extracted.fresh.length,
             rejectedByFreshness: extracted.rejectedByFreshness,
+            rejectedByRemoteLocation,
             newestAgeHours: extracted.newestAgeHours,
             oldestAgeHours: extracted.oldestAgeHours,
             maxAgeHours: c.maxAgeHours
           })
         );
 
-        for (const job of extracted.fresh) {
+        for (const job of eligibleFresh) {
           if (!seen.has(job.url)) {
             seen.add(job.url);
             out.push(job);
