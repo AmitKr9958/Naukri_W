@@ -12,13 +12,16 @@ import {sendTelegram} from './telegram.js';
 await fs.mkdir('logs',{recursive:true});
 validateConfig();
 const once=process.argv.includes('--once');
+const ignoreSeenRequested=process.argv.includes('--ignore-seen');
+if(ignoreSeenRequested&&!config.dryRun)throw new Error('--ignore-seen is permitted only when DRY_RUN=true.');
+const ignoreSeen=ignoreSeenRequested&&config.dryRun;
 let stopping=false;
 process.on('SIGINT',()=>stopping=true);
 process.on('SIGTERM',()=>stopping=true);
 
 async function runOnce(){
   const start=Date.now();
-  logger.info({aiEnabled:config.aiEnabled,autoLogin:config.autoLogin,dryRun:config.dryRun,once},'Run started');
+  logger.info({aiEnabled:config.aiEnabled,autoLogin:config.autoLogin,dryRun:config.dryRun,once,ignoreSeen},'Run started');
   const resume=await loadResume(config.resumePath);
   const profile=buildProfile(resume.text,config);
   const seen=await loadSeen();
@@ -26,8 +29,9 @@ async function runOnce(){
   try{
     await ensureLoggedIn(page,config);
     const candidates=await searchJobs(page,config);
-    const unseen=candidates.filter(j=>!seen.has(j.url));
-    const alreadySeen=candidates.length-unseen.length;
+    const seenCandidates=candidates.filter(j=>seen.has(j.url));
+    const unseen=ignoreSeen?candidates:candidates.filter(j=>!seen.has(j.url));
+    const alreadySeen=seenCandidates.length;
     const scored=unseen.map(j=>({...j,...scoreJob(j,profile)})).sort((a,b)=>b.score-a.score);
     const aiEnabled=config.aiEnabled&&config.aiConsent;
     let pool=aiEnabled?scored.slice(0,config.aiCandidateLimit):scored.slice(0,config.maxJobsPerRun);
@@ -35,6 +39,7 @@ async function runOnce(){
       freshCandidates:candidates.length,
       unseenCandidates:unseen.length,
       alreadySeen,
+      ignoreSeen,
       ruleScoreCandidates:scored.length,
       aiEnabled,
       aiPoolBeforeAnalysis:pool.length
@@ -43,6 +48,7 @@ async function runOnce(){
     logger.info({
       candidates:pool.map(j=>({
         title:j.title,
+        url:j.url,
         company:j.company,
         location:j.location,
         ruleScore:j.score,
@@ -74,6 +80,7 @@ async function runOnce(){
       candidates:candidates.length,
       unseen:unseen.length,
       alreadySeen,
+      ignoreSeen,
       ruleScoreCandidates:scored.length,
       aiCandidates:aiEnabled?pool.length:0,
       aiRelevant:aiEnabled?pool.filter(j=>j.relevant!==false).length:0,
