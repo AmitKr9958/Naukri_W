@@ -700,41 +700,64 @@ async function pageWaitShort(field) {
 
 async function selectSortByDate(page) {
   try {
-    const triggers = [
-      page.getByText(/Sort by/i).first(),
+    // 1) Native <select>
+    const selects = page.locator('select');
+    const selectCount = await selects.count().catch(() => 0);
+    for (let i = 0; i < selectCount; i++) {
+      const sel = selects.nth(i);
+      const optionTexts = await sel.locator('option').allTextContents().catch(() => []);
+      const dateOpt = optionTexts.find(o => /^\s*date\b/i.test(String(o).trim()));
+      if (!dateOpt) continue;
+      await sel.selectOption({label: dateOpt.trim()}).catch(async () => {
+        await sel.selectOption({label: 'Date'}).catch(() => {});
+      });
+      await page.waitForTimeout(600);
+      return true;
+    }
+
+    // 2) Open "Sort by" control then choose Date
+    const triggerCandidates = [
+      page.getByText(/Sort by\s*:?\s*(Recommended|Relevance|Date)?/i).first(),
       page.locator('[class*="sort" i]').filter({hasText: /sort/i}).first(),
-      page.locator('select').filter({hasText: /relevan|date/i}).first()
+      page.locator('button,div,span').filter({hasText: /^Sort by/i}).first()
     ];
-    let opened = false;
-    for (const trigger of triggers) {
-      if ((await trigger.count()) && (await trigger.isVisible().catch(() => false))) {
-        await trigger.click({force: true}).catch(() => {});
-        await page.waitForTimeout(400);
-        opened = true;
-        break;
+    for (const trigger of triggerCandidates) {
+      if (!(await trigger.count()) || !(await trigger.isVisible().catch(() => false))) continue;
+      await trigger.click({force: true}).catch(() => {});
+      await page.waitForTimeout(350);
+
+      const dateOptions = [
+        page.getByRole('option', {name: /^Date$/i}).first(),
+        page.getByRole('menuitem', {name: /^Date$/i}).first(),
+        page.locator('[role="option"],[role="menuitem"],li,button,a,div,span').filter({hasText: /^Date$/i}).first(),
+        page.getByText(/^Date$/i).first()
+      ];
+      for (const date of dateOptions) {
+        if ((await date.count()) && (await date.isVisible().catch(() => false))) {
+          await date.click({force: true}).catch(() => {});
+          await page.waitForTimeout(600);
+          return true;
+        }
       }
     }
-    if (!opened) return false;
 
-    const dateOptions = [
-      page.getByRole('option', {name: /^Date$/i}).first(),
-      page.getByText(/^Date$/i).first(),
-      page.getByText(/Date\s*[-–]\s*new to old/i).first(),
-      page.locator('[class*="sort" i]').getByText(/^Date$/i).first()
-    ];
-    for (const date of dateOptions) {
-      if ((await date.count()) && (await date.isVisible().catch(() => false))) {
-        await date.click({force: true}).catch(() => {});
-        await page.waitForTimeout(500);
+    // 3) DOM fallback
+    const clicked = await page.evaluate(() => {
+      const visible = el => {
+        const r = el.getBoundingClientRect();
+        const s = window.getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+      };
+      const nodes = [...document.querySelectorAll('button,a,li,div,span,label,[role="option"],[role="menuitem"]')];
+      const dateNode = nodes.find(el => visible(el) && /^\s*Date\s*$/i.test((el.textContent || '').trim()));
+      if (dateNode) {
+        dateNode.click();
         return true;
       }
-    }
-    const select = page.locator('select').filter({hasText: /date|relevan/i}).first();
-    if (await select.count()) {
-      await select.selectOption({label: 'Date'}).catch(async () => {
-        await select.selectOption({value: 'date'}).catch(() => {});
-      });
-      await page.waitForTimeout(500);
+      return false;
+    }).catch(() => false);
+    if (clicked) {
+      await page.waitForTimeout(600);
       return true;
     }
   } catch {}
@@ -743,31 +766,60 @@ async function selectSortByDate(page) {
 
 async function selectFreshnessLastDay(page) {
   try {
+    const directSelectors = () => [
+      page.getByText(/^Last\s*1\s*day$/i).first(),
+      page.getByText(/Last\s*1\s*day/i).first(),
+      page.locator('label').filter({hasText: /Last\s*1\s*day/i}).first(),
+      page.locator('[class*="filter" i], [class*="fresh" i]').getByText(/Last\s*1\s*day/i).first()
+    ];
+
+    for (const lastDay of directSelectors()) {
+      if ((await lastDay.count()) && (await lastDay.isVisible().catch(() => false))) {
+        await lastDay.click({force: true}).catch(() => {});
+        await page.waitForTimeout(600);
+        return true;
+      }
+    }
+
     const freshnessTriggers = [
-      page.getByText('Freshness', {exact: true}).first(),
+      page.getByText(/^Freshness$/i).first(),
       page.getByText(/Freshness/i).first(),
       page.locator('[class*="filter" i]').filter({hasText: /Freshness/i}).first()
     ];
     for (const freshness of freshnessTriggers) {
       if (!(await freshness.count()) || !(await freshness.isVisible().catch(() => false))) continue;
       await freshness.click({force: true}).catch(() => {});
-      await page.waitForTimeout(400);
+      await page.waitForTimeout(350);
       break;
     }
 
-    const candidates = [
-      page.getByText('Last 1 day', {exact: true}).first(),
-      page.getByText('Last 1 Day', {exact: true}).first(),
-      page.getByText(/Last\s*1\s*day/i).first(),
-      page.getByLabel(/Last\s*1\s*day/i).first(),
-      page.locator('label').filter({hasText: /Last\s*1\s*day/i}).first()
-    ];
-    for (const lastDay of candidates) {
+    for (const lastDay of directSelectors()) {
       if ((await lastDay.count()) && (await lastDay.isVisible().catch(() => false))) {
         await lastDay.click({force: true}).catch(() => {});
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(600);
         return true;
       }
+    }
+
+    const clicked = await page.evaluate(() => {
+      const visible = el => {
+        const r = el.getBoundingClientRect();
+        const s = window.getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+      };
+      const nodes = [...document.querySelectorAll('label,button,a,li,div,span,input')];
+      const target = nodes.find(el =>
+        visible(el) && /last\s*1\s*day/i.test((el.textContent || el.getAttribute('aria-label') || '').trim())
+      );
+      if (target) {
+        target.click();
+        return true;
+      }
+      return false;
+    }).catch(() => false);
+    if (clicked) {
+      await page.waitForTimeout(600);
+      return true;
     }
   } catch {}
   return false;
@@ -1051,22 +1103,27 @@ export async function searchJobs(page, c) {
           }
         }
 
-        // Speed: stop pagination when every parsed age is outside the freshness
-        // window. For a 6h filter, page 2 of "Recommended" almost never helps.
-        if (extracted.allParsedOlderThanMax ||
-            (extracted.newestAgeHours != null && extracted.newestAgeHours > c.maxAgeHours)) {
+        // Only stop early when date-sort is confirmed AND this page is entirely stale.
+        // Without date-sort, page 2 may still hold newer jobs under Recommended ranking.
+        if (sortedByDate &&
+            (extracted.allParsedOlderThanMax ||
+              (extracted.newestAgeHours != null && extracted.newestAgeHours > c.maxAgeHours))) {
           console.info(JSON.stringify({
             search: q,
             location: loc || 'ALL',
             page: pageNo,
-            message: 'Stopping pagination — newest listing is older than the freshness window.',
+            message: 'Stopping pagination — date-sorted page is older than the freshness window.',
             newestAgeHours: extracted.newestAgeHours,
-            maxAgeHours: c.maxAgeHours
+            maxAgeHours: c.maxAgeHours,
+            sortedByDate
           }));
           break;
         }
 
-        const pageCap = Math.min(c.maxPagesPerSearch, 2);
+        // If sort-by-date failed, always allow up to 2 pages so fresh jobs are not missed.
+        const pageCap = sortedByDate
+          ? Math.min(c.maxPagesPerSearch, 2)
+          : Math.max(Math.min(c.maxPagesPerSearch, 2), 2);
         const next = pageNo < pageCap ? await nextPageUrl(page, url) : null;
         if (!next) break;
         await page.goto(next, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
