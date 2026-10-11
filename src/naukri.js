@@ -642,7 +642,9 @@ async function runSearchFromHomepage(page, c, q, loc) {
   if (!freshnessUiApplied) {
     try {
       const u = new URL(resultUrl);
-      u.searchParams.set('freshness', '1');
+      // Naukri's search endpoint uses nDate=1 for its one-day freshness filter.
+      // Keep the strict maxAgeHours parser as the final six-hour gate.
+      u.searchParams.set('nDate', '1');
       await page.goto(u.href, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
       await page.waitForTimeout(Math.max(800, Math.min(c.pageDelayMs, 1200)));
       resultUrl = page.url();
@@ -653,14 +655,15 @@ async function runSearchFromHomepage(page, c, q, loc) {
 
   const sortedByDate = await selectSortByDate(page);
   const freshnessFilterApplied =
-    freshnessUiApplied || /(?:^|[?&])freshness=1(?:&|$)/i.test(resultUrl);
+    freshnessUiApplied || /(?:^|[?&])(?:nDate|freshness)=1(?:&|$)/i.test(resultUrl);
   console.info(JSON.stringify({
     search: q,
     location: loc || 'ALL',
     sortedByDate,
     freshnessFilterApplied,
     maxAgeHours: c.maxAgeHours,
-    freshnessParam: '1'
+    freshnessParam: 'nDate=1',
+    resultUrl
   }));
   return {url: resultUrl, sortedByDate};
 }
