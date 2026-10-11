@@ -725,7 +725,7 @@ async function selectSortByDate(page) {
     for (const date of dateOptions) {
       if ((await date.count()) && (await date.isVisible().catch(() => false))) {
         await date.click({force: true}).catch(() => {});
-        await page.waitForTimeout(1200);
+        await page.waitForTimeout(500);
         return true;
       }
     }
@@ -734,7 +734,7 @@ async function selectSortByDate(page) {
       await select.selectOption({label: 'Date'}).catch(async () => {
         await select.selectOption({value: 'date'}).catch(() => {});
       });
-      await page.waitForTimeout(1200);
+      await page.waitForTimeout(500);
       return true;
     }
   } catch {}
@@ -765,7 +765,7 @@ async function selectFreshnessLastDay(page) {
     for (const lastDay of candidates) {
       if ((await lastDay.count()) && (await lastDay.isVisible().catch(() => false))) {
         await lastDay.click({force: true}).catch(() => {});
-        await page.waitForTimeout(1200);
+        await page.waitForTimeout(500);
         return true;
       }
     }
@@ -806,24 +806,23 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
     directUrl
   }));
 
+  const settleMs = Math.min(Math.max(c.pageDelayMs, 250), 800);
   await withRetry(
     () => page.goto(directUrl, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs}),
-    {retries: c.maxRetries, delayMs: c.retryDelayMs}
+    {retries: Math.min(c.maxRetries, 2), delayMs: Math.min(c.retryDelayMs, 1500)}
   );
-  await page.waitForTimeout(Math.max(c.pageDelayMs, 1800));
+  await page.waitForTimeout(settleMs);
   await assertNaukriReachable(page);
   await dismissOverlays(page);
-  await page.waitForTimeout(800);
-  await dismissOverlays(page);
 
-  // If Naukri bounced us back to the homepage, retry once via homepage form then direct again.
+  // If Naukri bounced us back to the homepage, retry once.
   if (isNaukriHomepageUrl(page.url()) && attempt < 1) {
     console.warn(JSON.stringify({
       search: q,
       location: loc || 'ALL',
       message: 'Search URL redirected to homepage; retrying once'
     }));
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(settleMs);
     return runSearchFromHomepage(page, c, q, loc, attempt + 1);
   }
 
@@ -837,25 +836,18 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
     throw new Error('Naukri session expired during search. Automatic login did not restore the session.');
   }
 
-  // Wait for either results or an error page. Naukri often paints the filter
-  // chrome first and hydrates job cards a moment later; give it extra time.
+  // Direct result URLs usually paint quickly — keep the wait short.
   await page
     .waitForSelector(
       `${JOB_CARD_SELECTOR},a[href*="job-listings"],a[href*="/job/"],.styles_jlc__main,[class*="styles_jlc" i],text=/Oops! Something went wrong/i,text=/\\d+\\s*[-–]\\s*\\d+\\s+of\\s+\\d+/i`,
-      {timeout: 20000}
+      {timeout: 8000}
     )
     .catch(() => {});
 
-  // Trigger lazy-loaded cards that appear only after a small scroll.
-  await page.evaluate(() => window.scrollBy(0, 400)).catch(() => {});
-  await page.waitForTimeout(1500);
-
   let resultCountAfterSubmit = await recognizedJobCardCount(page);
   if (!resultCountAfterSubmit) {
-    // One extra hydration window before declaring failure.
-    await page.waitForTimeout(2500);
-    await page.evaluate(() => window.scrollBy(0, 600)).catch(() => {});
-    await page.waitForTimeout(1000);
+    await page.evaluate(() => window.scrollBy(0, 500)).catch(() => {});
+    await page.waitForTimeout(settleMs);
     resultCountAfterSubmit = await recognizedJobCardCount(page);
   }
 
@@ -863,11 +855,10 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
     const retryBody = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 1800);
     if (attempt < 1 && /cookie policy|privacy policy/i.test(retryBody) && /got it/i.test(retryBody)) {
       await dismissOverlays(page);
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(settleMs);
       console.warn(JSON.stringify({search:q,location:loc,attempt,message:'Cookie consent blocked result rendering; retrying search once'}));
       return runSearchFromHomepage(page,c,q,loc,attempt+1);
     }
-    // Retry once when the results header is present but cards have not painted yet.
     if (attempt < 1 && /\b\d+\s*[-–]\s*\d+\s+of\s+\d+/i.test(retryBody)) {
       console.warn(JSON.stringify({
         search: q,
@@ -909,15 +900,15 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
   // Only fall back to the public freshness URL parameter when the UI control
   // is not exposed. The strict 6-hour parser below remains authoritative.
   let resultUrl = page.url();
+  const alreadyHasNDate = /(?:^|[?&])(?:nDate|freshness)=1(?:&|$)/i.test(resultUrl);
   const freshnessUiApplied = await selectFreshnessLastDay(page);
-  if (!freshnessUiApplied) {
+  // URL already includes nDate=1 from buildNaukriSearchUrl — avoid a second navigation.
+  if (!freshnessUiApplied && !alreadyHasNDate) {
     try {
       const u = new URL(resultUrl);
-      // Naukri's search endpoint uses nDate=1 for its one-day freshness filter.
-      // Keep the strict maxAgeHours parser as the final six-hour gate.
       u.searchParams.set('nDate', '1');
       await page.goto(u.href, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
-      await page.waitForTimeout(Math.max(800, Math.min(c.pageDelayMs, 1200)));
+      await page.waitForTimeout(Math.min(c.pageDelayMs, 500));
       resultUrl = page.url();
     } catch {}
   } else {
@@ -989,7 +980,7 @@ export async function searchJobs(page, c) {
         let cards = await recognizedJobCardCount(page);
         if (!cards) {
           await page.evaluate(() => window.scrollBy(0, 500)).catch(() => {});
-          await page.waitForTimeout(2500);
+          await page.waitForTimeout(Math.min(c.pageDelayMs, 600));
           cards = await recognizedJobCardCount(page);
         }
         if (!cards) {
@@ -1060,24 +1051,26 @@ export async function searchJobs(page, c) {
           }
         }
 
-        // Only stop early when Naukri confirmed newest-first sorting. When the
-        // sort control is unavailable, page 2 may still contain newer jobs, so
-        // continue within the configured page cap even if page 1 is stale.
-        if (sortedByDate && extracted.allParsedOlderThanMax) {
+        // Speed: stop pagination when every parsed age is outside the freshness
+        // window. For a 6h filter, page 2 of "Recommended" almost never helps.
+        if (extracted.allParsedOlderThanMax ||
+            (extracted.newestAgeHours != null && extracted.newestAgeHours > c.maxAgeHours)) {
           console.info(JSON.stringify({
             search: q,
             location: loc || 'ALL',
             page: pageNo,
-            message: 'Stopping pagination because this page is entirely older than the freshness window.',
+            message: 'Stopping pagination — newest listing is older than the freshness window.',
+            newestAgeHours: extracted.newestAgeHours,
             maxAgeHours: c.maxAgeHours
           }));
           break;
         }
 
-        const next = pageNo < Math.min(c.maxPagesPerSearch, 2) ? await nextPageUrl(page, url) : null;
+        const pageCap = Math.min(c.maxPagesPerSearch, 2);
+        const next = pageNo < pageCap ? await nextPageUrl(page, url) : null;
         if (!next) break;
         await page.goto(next, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
-        await page.waitForTimeout(c.pageDelayMs);
+        await page.waitForTimeout(Math.min(c.pageDelayMs, 600));
         url = page.url();
       }
     }

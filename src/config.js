@@ -22,8 +22,9 @@ export const config={
   minMatchScore:Number(process.env.MIN_MATCH_SCORE||60),
   maxJobsPerRun:positiveInt(process.env.MAX_JOBS_PER_RUN,15),
   aiCandidateLimit:positiveInt(process.env.AI_CANDIDATE_LIMIT,30),
-  maxPagesPerSearch:positiveInt(process.env.MAX_PAGES_PER_SEARCH,5),
-  pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,1200),
+  // Default 1 page: for a strict 6h freshness window, page 2 is almost always stale.
+  maxPagesPerSearch:positiveInt(process.env.MAX_PAGES_PER_SEARCH,1),
+  pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,400),
   telegramToken:process.env.TELEGRAM_BOT_TOKEN||'',
   telegramChatId:process.env.TELEGRAM_CHAT_ID||'',
   aiEnabled:bool(process.env.AI_ENABLED,false),
@@ -31,11 +32,11 @@ export const config={
   aiBaseUrl:process.env.AI_BASE_URL||'http://localhost:20128/v1',
   aiApiKey:process.env.AI_API_KEY||'',
   aiModel:process.env.AI_MODEL||'cc/claude-haiku-4-20250514',
-  maxRetries:positiveInt(process.env.MAX_RETRIES,3),
-  retryDelayMs:positiveInt(process.env.RETRY_DELAY_MS,5000),
-  navigationTimeoutMs:positiveInt(process.env.NAVIGATION_TIMEOUT_MS,45000),
-  actionTimeoutMs:positiveInt(process.env.ACTION_TIMEOUT_MS,20000),
-  httpTimeoutMs:positiveInt(process.env.HTTP_TIMEOUT_MS,30000)
+  maxRetries:positiveInt(process.env.MAX_RETRIES,2),
+  retryDelayMs:positiveInt(process.env.RETRY_DELAY_MS,1500),
+  navigationTimeoutMs:positiveInt(process.env.NAVIGATION_TIMEOUT_MS,25000),
+  actionTimeoutMs:positiveInt(process.env.ACTION_TIMEOUT_MS,12000),
+  httpTimeoutMs:positiveInt(process.env.HTTP_TIMEOUT_MS,20000)
 };
 export function validateConfig(){
   const m=[];
