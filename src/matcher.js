@@ -6,17 +6,20 @@ const tokens=s=>new Set(norm(s).split(/[^a-z0-9+#.-]+/).filter(x=>x.length>1));
 // into a Power BI / analytics match.
 export function isTargetRole(job){
   const title=norm(job?.title).replace(/\s+/g,' ').trim();
-  if(!title) return false;
-  if(/\b(intern|internship|trainee|apprentice|fresher|freshers)\b/.test(title)) return false;
+  if(!title)return false;
+  // Exclude entry-level listings even if they mention otherwise relevant tools.
+  if(/\b(intern|internship|trainee|apprentice|fresher|freshers)\b/.test(title))return false;
 
   return (
     /\bpower\s*bi\b/.test(title) ||
     /\bbusiness intelligence\b/.test(title) ||
-    /\b(data|business|bi|reporting|mis)\s+(?:analyst|analytics analyst|intelligence analyst|developer|engineer|consultant|lead|manager|specialist)\b/.test(title) ||
-    /\b(?:reporting analyst|reporting developer|reporting lead|mis executive|mis analyst|mis manager)\b/.test(title) ||
-    /\bfabric\b/.test(title) && /\b(?:data|analytics|bi|developer|engineer|architect|consultant|lead|microsoft)\b/.test(title) ||
-    /\b(?:analytics|data)\s+(?:team )?lead\b/.test(title) ||
-    /\b(?:power bi|business intelligence|data analytics|reporting)\b.*\b(?:team lead|lead|manager|head)\b/.test(title)
+    /\bbi\s+(?:developer|analyst|engineer|consultant|lead|manager|architect|specialist)\b/.test(title) ||
+    /\b(?:data|business|reporting|mis)\s+(?:analyst|analytics analyst|intelligence analyst|developer|engineer|consultant|lead|manager|specialist|architect)\b/.test(title) ||
+    /\bmis\s+executive\b/.test(title) ||
+    /\b(?:analytics|data analytics)\s+(?:team\s+)?(?:lead|manager|head|specialist|consultant|developer|engineer|architect)\b/.test(title) ||
+    /\b(?:reporting|analytics|business intelligence|data analytics)\b.*\b(?:lead|manager|head|team lead)\b/.test(title) ||
+    (/\bfabric\b/.test(title) && /\b(?:data|analytics|bi|developer|engineer|architect|consultant|lead|microsoft|platform|administrator|admin|specialist)\b/.test(title)) ||
+    /\bpower platform\b/.test(title)
   );
 }
 
