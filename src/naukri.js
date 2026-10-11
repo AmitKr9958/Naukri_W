@@ -53,6 +53,21 @@ function cleanUrl(href) {
   }
 }
 
+// Strip tracking/query parameters so duplicate links to the same job collapse
+// to one stable URL. Keep the full path because Naukri embeds the job ID there.
+export function canonicalJobUrl(href) {
+  const cleaned = cleanUrl(href);
+  if (!cleaned) return null;
+  try {
+    const url = new URL(cleaned);
+    url.search = '';
+    url.hash = '';
+    url.pathname = url.pathname.replace(/\/+$/, '');
+    return url.href;
+  } catch {
+    return null;
+  }
+}
 export function nextSearchPageUrl(currentUrl, links) {
   for (const item of links) {
     const href = typeof item === 'string' ? item : item?.href;
@@ -103,24 +118,29 @@ async function recognizedJobCardCount(page) {
 }
 
 async function collectJobCardLocators(page) {
-  // Prefer one card per actual job URL. The class-based selector also matches
-  // nested Naukri wrappers (sometimes 150+ nodes for only 20 jobs), so using it
-  // first silently drops most listings after URL deduplication.
+  // Bind each result card to the exact listing URL that identified it. Naukri
+  // nests several links inside cards, so rediscovering the first link later can
+  // assign a different job URL to the card and lose valid listings.
   const structured = await page.locator(JOB_CARD_SELECTOR).all();
-  const links = await page.locator('a[href*="job-listings-"],a[href*="/job/"]').all();
+  const links = await page.locator('a[href*="job-listings"],a[href*="/job/"]').all();
   const cards = [];
   const seen = new Set();
 
   for (const link of links) {
+    const rawHref = await link.getAttribute('href').catch(() => null);
+    const url = canonicalJobUrl(rawHref);
+    if (!url || seen.has(url)) continue;
+
     let candidate = link;
     let best = null;
-    // Walk up the DOM until the container includes a recognizable posted-age label.
-    for (let depth = 0; depth < 9; depth++) {
+    let bestText = '';
+    // Select the smallest ancestor containing both useful card text and posted age.
+    for (let depth = 0; depth < 10; depth++) {
       const raw = (await candidate.innerText().catch(() => '')).trim();
-      const href = await link.getAttribute('href').catch(() => null);
       const age = parseAgeHours(findPostedText(raw, ''));
-      if (href && /job-listings-|\/job\//i.test(href) && raw.length >= 35 && raw.length <= 3500 && age !== null) {
+      if (raw.length >= 35 && raw.length <= 3500 && age !== null) {
         best = candidate;
+        bestText = raw;
         break;
       }
       const parent = candidate.locator('xpath=..');
@@ -128,17 +148,31 @@ async function collectJobCardLocators(page) {
       candidate = parent;
     }
     if (!best) continue;
-    const href = cleanUrl(await link.getAttribute('href').catch(() => null));
-    if (!href || seen.has(href)) continue;
-    seen.add(href);
-    cards.push(best);
+    seen.add(url);
+    cards.push({card: best, url, cardText: bestText});
   }
 
-  // Keep the legacy selector only as a fallback for Naukri pages whose job URLs
-  // are rendered in a format not covered by the listing-link selectors above.
-  return cards.length ? cards : structured;
+  // Fallback for cards rendered with a new Naukri URL pattern.
+  if (!cards.length) {
+    for (const card of structured) {
+      const anchors = await card.locator('a[href]').all();
+      let url = null;
+      for (const anchor of anchors) {
+        const href = await anchor.getAttribute('href').catch(() => null);
+        if (/job-listings|\/job\//i.test(String(href || ''))) {
+          url = canonicalJobUrl(href);
+          if (url) break;
+        }
+      }
+      if (!url || seen.has(url)) continue;
+      const raw = (await card.innerText().catch(() => '')).trim();
+      if (parseAgeHours(findPostedText(raw, '')) === null) continue;
+      seen.add(url);
+      cards.push({card, url, cardText: raw});
+    }
+  }
+  return cards;
 }
-
 async function extractFreshCards(page, c) {
   const fresh = [];
   let rejectedByFreshness = 0;
@@ -147,24 +181,16 @@ async function extractFreshCards(page, c) {
   const seenCardUrls = new Set();
   let parsedAges = [];
 
-  for (const card of cards.slice(0, 50)) {
-    const raw = await card.innerText().catch(() => '');
-    const anchors = await card.locator('a').all();
-    let link = null;
-    for (const a of anchors) {
-      const href = await a.getAttribute('href').catch(() => null);
-      if (href && /job-listings-|\/job\//i.test(href)) {
-        link = href;
-        break;
-      }
-    }
-    if (!link && anchors[0]) link = await anchors[0].getAttribute('href').catch(() => null);
-    link = cleanUrl(link);
+  for (const entry of cards.slice(0, 50)) {
+    const card = entry.card;
+    const raw = entry.cardText || await card.innerText().catch(() => '');
+    const link = entry.url;
     if (!link || seenCardUrls.has(link)) continue;
     seenCardUrls.add(link);
 
     const lines = raw.split('\n').map(x => x.trim()).filter(Boolean);
-    const title = (await card.locator('a').first().innerText().catch(() => '')).trim() || lines[0] || '';
+    const titleAnchor = card.locator('a[href*="job-listings"],a[href*="/job/"]').first();
+    const title = (await titleAnchor.innerText().catch(() => '')).trim() || lines[0] || '';
     const preferredPosted = await textFromFirst(card, [
       '.job-post-day',
       '.job-posted-date',
