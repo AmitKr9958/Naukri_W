@@ -152,24 +152,23 @@ async function collectJobCardLocators(page) {
     cards.push({card: best, url, cardText: bestText});
   }
 
-  // Fallback for cards rendered with a new Naukri URL pattern.
-  if (!cards.length) {
-    for (const card of structured) {
-      const anchors = await card.locator('a[href]').all();
-      let url = null;
-      for (const anchor of anchors) {
-        const href = await anchor.getAttribute('href').catch(() => null);
-        if (/job-listings|\/job\//i.test(String(href || ''))) {
-          url = canonicalJobUrl(href);
-          if (url) break;
-        }
+  // Supplement links whose posted-age label is outside their immediate ancestry.
+  // Some current Naukri cards expose the date only in a legacy wrapper.
+  for (const card of structured) {
+    const raw = (await card.innerText().catch(() => '')).trim();
+    if (raw.length < 35 || raw.length > 3500 || parseAgeHours(findPostedText(raw, '')) === null) continue;
+    const anchors = await card.locator('a[href]').all();
+    let url = null;
+    for (const anchor of anchors) {
+      const href = await anchor.getAttribute('href').catch(() => null);
+      if (/job-listings|\/job\//i.test(String(href || ''))) {
+        url = canonicalJobUrl(href);
+        if (url) break;
       }
-      if (!url || seen.has(url)) continue;
-      const raw = (await card.innerText().catch(() => '')).trim();
-      if (parseAgeHours(findPostedText(raw, '')) === null) continue;
-      seen.add(url);
-      cards.push({card, url, cardText: raw});
     }
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    cards.push({card, url, cardText: raw});
   }
   return cards;
 }
@@ -634,7 +633,7 @@ async function selectFreshnessLastDay(page) {
   return false;
 }
 
-async function runSearchFromHomepage(page, c, q, loc) {
+async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
   await withRetry(
     () => page.goto(c.naukriUrl, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs}),
     {retries: c.maxRetries, delayMs: c.retryDelayMs}
