@@ -655,7 +655,19 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
     throw new Error('Naukri session expired during search. Automatic login did not restore the session.');
   }
 
-  const keyword = await openSearchForm(page, c);
+  let keyword;
+  try {
+    keyword = await openSearchForm(page, c);
+  } catch (error) {
+    const overlayBody = (await page.locator('body').innerText().catch(() => '')).slice(0, 2500);
+    if (attempt < 1 && /cookie policy|privacy policy/i.test(overlayBody) && /got it/i.test(overlayBody)) {
+      await dismissOverlays(page);
+      await page.waitForTimeout(1000);
+      console.warn(JSON.stringify({search:q,location:loc,attempt,message:'Cookie consent remained visible; retrying homepage search once'}));
+      return runSearchFromHomepage(page,c,q,loc,attempt+1);
+    }
+    throw error;
+  }
   await fillNaukriField(keyword, q);
 
   const location = await findNaukriSearchInput(page, 'location');
@@ -704,6 +716,13 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
 
   const resultCountAfterSubmit = await recognizedJobCardCount(page);
   if (!resultCountAfterSubmit) {
+    const retryBody = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 1800);
+    if (attempt < 1 && /cookie policy|privacy policy/i.test(retryBody) && /got it/i.test(retryBody)) {
+      await dismissOverlays(page);
+      await page.waitForTimeout(1000);
+      console.warn(JSON.stringify({search:q,location:loc,attempt,message:'Cookie consent blocked result rendering; retrying search once'}));
+      return runSearchFromHomepage(page,c,q,loc,attempt+1);
+    }
     const inputs = await collectInputDiagnostics(page);
     const title = await page.title().catch(() => '');
     const body = (await page.locator('body').innerText().catch(() => '')).replace(/\\s+/g, ' ').slice(0, 1800);
