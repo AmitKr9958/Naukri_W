@@ -94,11 +94,52 @@ export function remoteJobMatchesPreferredLocation(job, locations = []) {
   return false;
 }
 
+async function recognizedJobCardCount(page) {
+  const structured = await page.locator(JOB_CARD_SELECTOR).count().catch(() => 0);
+  if (structured) return structured;
+  // Current Naukri results can render job links without the legacy tuple classes.
+  // Treat these links as evidence of results; extraction below finds their card ancestor.
+  return page.locator('a[href*="job-listings-"],a[href*="/job/"]').count().catch(() => 0);
+}
+
+async function collectJobCardLocators(page) {
+  const structured = await page.locator(JOB_CARD_SELECTOR).all();
+  if (structured.length) return structured;
+
+  const links = await page.locator('a[href*="job-listings-"],a[href*="/job/"]').all();
+  const cards = [];
+  const seen = new Set();
+
+  for (const link of links) {
+    let candidate = link;
+    let best = null;
+    // Walk up the DOM until the container includes a recognizable posted-age label.
+    for (let depth = 0; depth < 9; depth++) {
+      const raw = (await candidate.innerText().catch(() => '')).trim();
+      const href = await link.getAttribute('href').catch(() => null);
+      const age = parseAgeHours(findPostedText(raw, ''));
+      if (href && /job-listings-|\/job\//i.test(href) && raw.length >= 35 && raw.length <= 3500 && age !== null) {
+        best = candidate;
+        break;
+      }
+      const parent = candidate.locator('xpath=..');
+      if (!(await parent.count().catch(() => 0))) break;
+      candidate = parent;
+    }
+    if (!best) continue;
+    const href = cleanUrl(await link.getAttribute('href').catch(() => null));
+    if (!href || seen.has(href)) continue;
+    seen.add(href);
+    cards.push(best);
+  }
+  return cards;
+}
+
 async function extractFreshCards(page, c) {
   const fresh = [];
   let rejectedByFreshness = 0;
   const diagnostics = [];
-  const cards = await page.locator(JOB_CARD_SELECTOR).all();
+  const cards = await collectJobCardLocators(page);
   const seenCardUrls = new Set();
   let parsedAges = [];
 
@@ -602,7 +643,7 @@ async function runSearchFromHomepage(page, c, q, loc) {
     }));
     await location.press('Enter').catch(() => {});
     await page.waitForTimeout(Math.max(2000, c.pageDelayMs));
-    let resultCount = await page.locator(JOB_CARD_SELECTOR).count().catch(() => 0);
+    let resultCount = await recognizedJobCardCount(page);
     if (!resultCount) {
       searchButton = await findVisible(page, searchSelectors);
       if (searchButton) await searchButton.click({force: true}).catch(() => {});
@@ -617,7 +658,7 @@ async function runSearchFromHomepage(page, c, q, loc) {
     })
     .catch(() => {});
 
-  const resultCountAfterSubmit = await page.locator(JOB_CARD_SELECTOR).count().catch(() => 0);
+  const resultCountAfterSubmit = await recognizedJobCardCount(page);
   if (!resultCountAfterSubmit) {
     const inputs = await collectInputDiagnostics(page);
     const title = await page.title().catch(() => '');
@@ -728,10 +769,10 @@ export async function searchJobs(page, c) {
           throw new Error('Naukri session expired during search. Automatic login did not restore the session.');
         }
 
-        let cards = await page.locator(JOB_CARD_SELECTOR).count();
+        let cards = await recognizedJobCardCount(page);
         if (!cards) {
           await page.waitForTimeout(2500);
-          cards = await page.locator(JOB_CARD_SELECTOR).count();
+          cards = await recognizedJobCardCount(page);
         }
         if (!cards) {
           console.warn(
@@ -741,7 +782,7 @@ export async function searchJobs(page, c) {
                 location: loc || 'ALL',
                 page: pageNo,
                 cards: 0,
-                message: 'No Naukri job cards found after homepage form search',
+                message: 'No Naukri job cards or job-listing links found after homepage form search',
                 url: page.url()
               },
               null,
