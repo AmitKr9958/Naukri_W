@@ -1,8 +1,24 @@
+import {existsSync} from 'node:fs';
 import {withRetry} from './retry.js';
 
 async function getChromium() {
   const mod = await import('playwright');
   return mod.chromium;
+}
+
+function resolveChromeExecutable() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA
+      ? `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`
+      : null
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 const slugify = s => String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -349,8 +365,31 @@ async function launchContext(c) {
           `profileDir=${c.profileDir} detail=${String(e?.message || e).slice(0, 300)}`
       );
     }
-    // Fallback to bundled Chromium only when Chrome itself is missing/unusable,
-    // not when the profile is locked (Chromium would hit Access Denied more often).
+
+    // channel=chrome failed but Chrome may still be installed — try explicit path.
+    const executablePath = resolveChromeExecutable();
+    if (executablePath) {
+      try {
+        console.info(JSON.stringify({msg: 'Using system Chrome via executablePath', executablePath}));
+        return await chromium.launchPersistentContext(c.profileDir, {...base, executablePath});
+      } catch (ePath) {
+        if (isProfileLockError(ePath)) {
+          throw new Error(
+            'Could not open the Naukri Chrome profile (likely locked by another Chrome/watcher process). ' +
+              'Stop other watcher/Chrome processes, clear SingletonLock files, then retry. ' +
+              `detail=${String(ePath?.message || ePath).slice(0, 300)}`
+          );
+        }
+        console.warn(
+          JSON.stringify({
+            msg: 'System Chrome executablePath launch failed; falling back to Chromium',
+            error: String(ePath?.message || ePath)
+          })
+        );
+      }
+    }
+
+    // Last resort: bundled Chromium (more likely to hit Access Denied).
     console.warn(
       JSON.stringify({
         msg: 'System Chrome not available; falling back to Chromium (more likely to hit Access Denied)',

@@ -1,8 +1,24 @@
+import {existsSync} from 'node:fs';
 import {config} from './config.js';
 
 async function getChromium() {
   const mod = await import('playwright');
   return mod.chromium;
+}
+
+function resolveChromeExecutable() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA
+      ? `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`
+      : null
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 const chromium = await getChromium();
@@ -20,9 +36,30 @@ const launchOpts = {
 let context;
 try {
   context = await chromium.launchPersistentContext(config.profileDir, {...launchOpts, channel: 'chrome'});
-} catch {
-  console.warn('System Chrome not found; using Chromium. Install Google Chrome if Access Denied continues.');
-  context = await chromium.launchPersistentContext(config.profileDir, launchOpts);
+  console.log('Using system Chrome (channel=chrome).');
+} catch (channelErr) {
+  const executablePath = resolveChromeExecutable();
+  if (executablePath) {
+    try {
+      context = await chromium.launchPersistentContext(config.profileDir, {
+        ...launchOpts,
+        executablePath
+      });
+      console.log('Using system Chrome via executablePath:', executablePath);
+    } catch (execErr) {
+      console.warn(
+        'System Chrome launch failed; using Chromium (Access Denied more likely).',
+        String(execErr?.message || execErr).slice(0, 200)
+      );
+      context = await chromium.launchPersistentContext(config.profileDir, launchOpts);
+    }
+  } else {
+    console.warn(
+      'System Chrome not found; using Chromium. Install Google Chrome if Access Denied continues.',
+      String(channelErr?.message || channelErr).slice(0, 200)
+    );
+    context = await chromium.launchPersistentContext(config.profileDir, launchOpts);
+  }
 }
 
 const p = context.pages()[0] || (await context.newPage());
