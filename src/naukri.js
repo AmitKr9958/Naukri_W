@@ -7,6 +7,10 @@ async function getChromium() {
 
 const slugify = s => String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+// Naukri changes result-card class names periodically. Keep legacy selectors and
+// add resilient class/semantic fallbacks for current job listing cards.
+const JOB_CARD_SELECTOR = 'JOB_CARD_SELECTOR,[class*="jobtuple" i],[class*="job-tuple" i],article:has(a[href*="job-listings-"])';
+
 export function parseAgeHours(raw) {
   const s = String(raw || '').replace(/\s+/g, ' ').trim().toLowerCase();
   if (!s) return null;
@@ -94,7 +98,7 @@ async function extractFreshCards(page, c) {
   const fresh = [];
   let rejectedByFreshness = 0;
   const diagnostics = [];
-  const cards = await page.locator('.cust-job-tuple,.srp-jobtuple-wrapper,[data-job-id]').all();
+  const cards = await page.locator('JOB_CARD_SELECTOR').all();
   const seenCardUrls = new Set();
   let parsedAges = [];
 
@@ -585,7 +589,7 @@ async function runSearchFromHomepage(page, c, q, loc) {
     }));
     await location.press('Enter').catch(() => {});
     await page.waitForTimeout(Math.max(2000, c.pageDelayMs));
-    let resultCount = await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count().catch(() => 0);
+    let resultCount = await page.locator('JOB_CARD_SELECTOR').count().catch(() => 0);
     if (!resultCount) {
       searchButton = await findVisible(page, searchSelectors);
       if (searchButton) await searchButton.click({force: true}).catch(() => {});
@@ -595,12 +599,12 @@ async function runSearchFromHomepage(page, c, q, loc) {
 
   // Wait for either results or an error page
   await page
-    .waitForSelector('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id],.styles_jlc__main,text=/Oops! Something went wrong/i', {
+    .waitForSelector('JOB_CARD_SELECTOR,.styles_jlc__main,text=/Oops! Something went wrong/i', {
       timeout: 15000
     })
     .catch(() => {});
 
-  const resultCountAfterSubmit = await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count().catch(() => 0);
+  const resultCountAfterSubmit = await page.locator('JOB_CARD_SELECTOR').count().catch(() => 0);
   if (!resultCountAfterSubmit) {
     const inputs = await collectInputDiagnostics(page);
     const title = await page.title().catch(() => '');
@@ -699,10 +703,10 @@ export async function searchJobs(page, c) {
           throw new Error('Naukri session expired during search. Automatic login did not restore the session.');
         }
 
-        let cards = await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count();
+        let cards = await page.locator('JOB_CARD_SELECTOR').count();
         if (!cards) {
           await page.waitForTimeout(2500);
-          cards = await page.locator('.srp-jobtuple-wrapper,.cust-job-tuple,[data-job-id]').count();
+          cards = await page.locator('JOB_CARD_SELECTOR').count();
         }
         if (!cards) {
           console.warn(
