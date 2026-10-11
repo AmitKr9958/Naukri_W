@@ -790,9 +790,26 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
     'input[type="submit"]',
     '[class*="search"] button'
   ];
+  const buildSearchUrl = (query, locationLabel) => {
+    const k = encodeURIComponent(String(query || '').trim());
+    const l = encodeURIComponent(String(locationLabel || '').trim());
+    const pathQ = slugify(query || 'jobs') || 'jobs';
+    const pathL = slugify(locationLabel || '') || 'india';
+    const u = new URL(`https://www.naukri.com/${pathQ}-jobs-in-${pathL}`);
+    u.searchParams.set('k', String(query || '').trim());
+    if (locationLabel) u.searchParams.set('l', String(locationLabel).trim());
+    u.searchParams.set('nignbevent_src', 'jobsearchDeskGNB');
+    return u.href;
+  };
+
   let searchButton = await findVisible(page, searchSelectors);
   if (searchButton) {
-    await searchButton.click({force: true});
+    await Promise.all([
+      page.waitForURL(url => !/naukri\.com\/?$/i.test(new URL(url).pathname) || /[?&]k=/.test(url), {
+        timeout: 12000
+      }).catch(() => {}),
+      searchButton.click({force: true})
+    ]);
   } else {
     // Naukri sometimes hides/replaces the button after selecting a location suggestion.
     // Try submitting the already-filled search form with Enter before failing the cycle.
@@ -801,7 +818,12 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
       location: loc || 'ALL',
       message: 'Search button not visible; trying Enter-key form submission'
     }));
-    await location.press('Enter').catch(() => {});
+    await Promise.all([
+      page.waitForURL(url => !/naukri\.com\/?$/i.test(new URL(url).pathname) || /[?&]k=/.test(url), {
+        timeout: 12000
+      }).catch(() => {}),
+      location.press('Enter')
+    ]).catch(() => {});
     await page.waitForTimeout(Math.max(2000, c.pageDelayMs));
     let resultCount = await recognizedJobCardCount(page);
     if (!resultCount) {
@@ -810,6 +832,22 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
     }
   }
   await page.waitForTimeout(Math.max(2000, c.pageDelayMs));
+
+  // If we are still on the bare homepage, form submit did not navigate — go directly.
+  const afterSubmitUrl = page.url();
+  const stillOnHomepage =
+    /naukri\.com\/?$/i.test(new URL(afterSubmitUrl).pathname) && !/[?&]k=/.test(afterSubmitUrl);
+  if (stillOnHomepage) {
+    const directUrl = buildSearchUrl(q, loc);
+    console.warn(JSON.stringify({
+      search: q,
+      location: loc || 'ALL',
+      message: 'Homepage form did not navigate; opening search URL directly',
+      directUrl
+    }));
+    await page.goto(directUrl, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
+    await page.waitForTimeout(Math.max(2000, c.pageDelayMs));
+  }
 
   // Wait for either results or an error page. Naukri often paints the filter
   // chrome first and hydrates job cards a moment later; give it extra time.
