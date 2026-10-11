@@ -11,13 +11,14 @@ import {sendTelegram} from './telegram.js';
 
 await fs.mkdir('logs',{recursive:true});
 validateConfig();
+const once=process.argv.includes('--once');
 let stopping=false;
 process.on('SIGINT',()=>stopping=true);
 process.on('SIGTERM',()=>stopping=true);
 
 async function runOnce(){
   const start=Date.now();
-  logger.info({aiEnabled:config.aiEnabled,autoLogin:config.autoLogin},'Run started');
+  logger.info({aiEnabled:config.aiEnabled,autoLogin:config.autoLogin,dryRun:config.dryRun,once},'Run started');
   const resume=await loadResume(config.resumePath);
   const profile=buildProfile(resume.text,config);
   const seen=await loadSeen();
@@ -60,8 +61,15 @@ async function runOnce(){
     }).sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
     const matches=ranked.slice(0,config.maxJobsPerRun);
     if(matches.length)await sendTelegram(config,matches);
-    for(const j of candidates)seen.add(j.url);
-    await saveSeen(seen);
+
+    // A dry-run must be observational: do not mark jobs as seen, otherwise
+    // a test could suppress those jobs in the next real alerting run.
+    if(config.dryRun){
+      logger.info({dryRun:true,stateUpdated:false},'Dry-run: seen-job state was not changed');
+    }else{
+      for(const j of candidates)seen.add(j.url);
+      await saveSeen(seen);
+    }
     logger.info({
       candidates:candidates.length,
       unseen:unseen.length,
@@ -70,13 +78,19 @@ async function runOnce(){
       aiCandidates:aiEnabled?pool.length:0,
       aiRelevant:aiEnabled?pool.filter(j=>j.relevant!==false).length:0,
       matches:matches.length,
+      dryRun:config.dryRun,
       durationMs:Date.now()-start
     },'Run complete');
   }finally{await context.close().catch(()=>{})}
 }
 
-if(config.runOnStart)await runOnce().catch(e=>logger.error({err:e},'Run failed'));
-while(!stopping){
-  await new Promise(r=>setTimeout(r,config.runEveryMinutes*60000));
-  if(!stopping)await runOnce().catch(e=>logger.error({err:e},'Run failed'));
+if(once){
+  try{await runOnce()}
+  catch(e){logger.error({err:e},'Single run failed');process.exitCode=1}
+}else{
+  if(config.runOnStart)await runOnce().catch(e=>logger.error({err:e},'Run failed'));
+  while(!stopping){
+    await new Promise(r=>setTimeout(r,config.runEveryMinutes*60000));
+    if(!stopping)await runOnce().catch(e=>logger.error({err:e},'Run failed'));
+  }
 }
