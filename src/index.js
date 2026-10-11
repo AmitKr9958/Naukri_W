@@ -39,6 +39,20 @@ async function runOnce(){
       aiPoolBeforeAnalysis:pool.length
     },'Pipeline candidates');
     if(aiEnabled)pool=await analyzeJobs(config,pool,resume.text);
+    logger.info({
+      candidates:pool.map(j=>({
+        title:j.title,
+        company:j.company,
+        location:j.location,
+        ruleScore:j.score,
+        finalScore:j.finalScore??j.score,
+        relevant:j.relevant,
+        aiFit:j.aiFit,
+        roleFit:j.roleFit,
+        reason:j.aiReason
+      })),
+      minimumScore:config.minMatchScore
+    },'Candidate scoring diagnostics');
     const ranked=pool.filter(j=>{
       const score=j.finalScore??j.score;
       if(aiEnabled&&j.relevant===false)return false;
