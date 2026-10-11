@@ -29,6 +29,7 @@ async function runOnce(){
   try{
     await ensureLoggedIn(page,config);
     const candidates=await searchJobs(page,config);
+    logger.info({scrapedCandidates:candidates.map(j=>({title:j.title,company:j.company,location:j.location,url:j.url}))},'Scraped candidates before role filter');
     const targetCandidates=candidates.filter(isTargetRole);
     const rejectedRoleCandidates=candidates.length-targetCandidates.length;
     const seenCandidates=targetCandidates.filter(j=>seen.has(j.url));
