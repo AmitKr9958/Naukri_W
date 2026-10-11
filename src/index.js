@@ -79,7 +79,12 @@ async function runOnce(){
     if(config.dryRun){
       logger.info({dryRun:true,stateUpdated:false},'Dry-run: seen-job state was not changed');
     }else{
-      for(const j of candidates)seen.add(j.url);
+      // Do not poison seen-state with unrelated roles or jobs that AI failed to
+      // evaluate. Those candidates must be eligible for a later successful run.
+      const markSeen=aiEnabled
+        ? pool.filter(j=>j.relevant===true||j.relevant===false)
+        : targetCandidates;
+      for(const j of markSeen)seen.add(j.url);
       await saveSeen(seen);
     }
     logger.info({
