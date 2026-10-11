@@ -110,11 +110,14 @@ export function remoteJobMatchesPreferredLocation(job, locations = []) {
 }
 
 async function recognizedJobCardCount(page) {
-  const structured = await page.locator(JOB_CARD_SELECTOR).count().catch(() => 0);
-  if (structured) return structured;
-  // Current Naukri results can render job links without the legacy tuple classes.
-  // Treat these links as evidence of results; extraction below finds their card ancestor.
-  return page.locator('a[href*="job-listings-"],a[href*="/job/"]').count().catch(() => 0);
+  // Naukri has used both "job-listings-<slug>" and "job-listings/<slug>"
+  // URL shapes. Count listing links first so unrelated wrappers/filters cannot
+  // hide a valid results page just because an old card class is present.
+  const listingLinks = await page.locator('a[href*="job-listings"],a[href*="/job/"]').count().catch(() => 0);
+  if (listingLinks) return listingLinks;
+
+  // Fallback for layouts where card wrappers render before their anchors.
+  return page.locator(JOB_CARD_SELECTOR).count().catch(() => 0);
 }
 
 async function collectJobCardLocators(page) {
