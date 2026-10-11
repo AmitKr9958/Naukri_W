@@ -344,8 +344,23 @@ async function dismissOverlays(page) {
   for (const label of ['Got it', 'Accept All', 'Accept']) {
     const consent = page.getByText(label, {exact: true}).first();
     if (await consent.isVisible().catch(() => false)) {
-      await consent.click({force: true}).catch(() => {});
-      await page.waitForTimeout(500);
+      // Some Naukri consent banners attach the handler to a parent container,
+      // not to the visible text node. Try Playwright click first, then a normal
+      // DOM click on the same visible consent action if the click is swallowed.
+      await consent.click({force: true, timeout: 2500}).catch(async () => {
+        await consent.evaluate(el => {
+          let target = el;
+          for (let depth = 0; depth < 4 && target; depth++, target = target.parentElement) {
+            const text = String(target.innerText || '').trim();
+            if (text.toLowerCase() === label.toLowerCase()) {
+              target.click();
+              return;
+            }
+          }
+          el.click();
+        }).catch(() => {});
+      });
+      await page.waitForTimeout(700);
     }
   }
 }
