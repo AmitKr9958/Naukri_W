@@ -322,20 +322,52 @@ async function launchContext(c) {
     ignoreDefaultArgs: ['--enable-automation']
   };
 
+  const isProfileLockError = err => {
+    const msg = String(err?.message || err || '');
+    return (
+      /Target page, context or browser has been closed/i.test(msg) ||
+      /exitCode=21/i.test(msg) ||
+      /user data directory is already in use/i.test(msg) ||
+      /SingletonLock/i.test(msg) ||
+      /ProcessSingleton/i.test(msg)
+    );
+  };
+
   try {
     return await chromium.launchPersistentContext(c.profileDir, {
       ...base,
       channel: 'chrome'
     });
   } catch (e) {
-    // Fallback to bundled Chromium if Chrome is not installed
+    if (isProfileLockError(e)) {
+      throw new Error(
+        'Could not open the Naukri Chrome profile (likely locked by another Chrome/watcher process). ' +
+          'Fix: 1) Stop any running naukri watcher / background task  ' +
+          '2) Close all Chrome windows that used this profile  ' +
+          '3) If needed, delete E:\\naukri_W\\.naukri-profile\\SingletonLock (and SingletonCookie/Socket) then retry  ' +
+          '4) Prefer NAUKRI_HEADLESS=false and run: npm run login  ' +
+          `profileDir=${c.profileDir} detail=${String(e?.message || e).slice(0, 300)}`
+      );
+    }
+    // Fallback to bundled Chromium only when Chrome itself is missing/unusable,
+    // not when the profile is locked (Chromium would hit Access Denied more often).
     console.warn(
       JSON.stringify({
         msg: 'System Chrome not available; falling back to Chromium (more likely to hit Access Denied)',
         error: String(e?.message || e)
       })
     );
-    return await chromium.launchPersistentContext(c.profileDir, base);
+    try {
+      return await chromium.launchPersistentContext(c.profileDir, base);
+    } catch (e2) {
+      if (isProfileLockError(e2)) {
+        throw new Error(
+          'Browser profile is locked. Stop other watcher/Chrome processes using .naukri-profile, then retry. ' +
+            `detail=${String(e2?.message || e2).slice(0, 300)}`
+        );
+      }
+      throw e2;
+    }
   }
 }
 
