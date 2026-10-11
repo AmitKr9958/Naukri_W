@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import {config,validateConfig} from './config.js';
 import {logger} from './logger.js';
 import {loadResume} from './resume.js';
-import {buildProfile,scoreJob} from './matcher.js';
+import {buildProfile,isTargetRole,scoreJob} from './matcher.js';
 import {analyzeJobs} from './ai.js';
 import {openNaukri,searchJobs} from './naukri.js';
 import {ensureLoggedIn} from './naukri-auth.js';
@@ -29,14 +29,18 @@ async function runOnce(){
   try{
     await ensureLoggedIn(page,config);
     const candidates=await searchJobs(page,config);
-    const seenCandidates=candidates.filter(j=>seen.has(j.url));
-    const unseen=ignoreSeen?candidates:candidates.filter(j=>!seen.has(j.url));
+    const targetCandidates=candidates.filter(isTargetRole);
+    const rejectedRoleCandidates=candidates.length-targetCandidates.length;
+    const seenCandidates=targetCandidates.filter(j=>seen.has(j.url));
+    const unseen=ignoreSeen?targetCandidates:targetCandidates.filter(j=>!seen.has(j.url));
     const alreadySeen=seenCandidates.length;
     const scored=unseen.map(j=>({...j,...scoreJob(j,profile)})).sort((a,b)=>b.score-a.score);
     const aiEnabled=config.aiEnabled&&config.aiConsent;
     let pool=aiEnabled?scored.slice(0,config.aiCandidateLimit):scored.slice(0,config.maxJobsPerRun);
     logger.info({
       freshCandidates:candidates.length,
+      targetRoleCandidates:targetCandidates.length,
+      rejectedRoleCandidates,
       unseenCandidates:unseen.length,
       alreadySeen,
       ignoreSeen,
@@ -62,7 +66,9 @@ async function runOnce(){
     },'Candidate scoring diagnostics');
     const ranked=pool.filter(j=>{
       const score=j.finalScore??j.score;
-      if(aiEnabled&&j.relevant===false)return false;
+      // If AI is configured, only explicit positive evaluations may alert.
+      // A timeout/unavailable model is not an approval.
+      if(aiEnabled&&j.relevant!==true)return false;
       return score>=config.minMatchScore;
     }).sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
     const matches=ranked.slice(0,config.maxJobsPerRun);
@@ -83,7 +89,9 @@ async function runOnce(){
       ignoreSeen,
       ruleScoreCandidates:scored.length,
       aiCandidates:aiEnabled?pool.length:0,
-      aiRelevant:aiEnabled?pool.filter(j=>j.relevant!==false).length:0,
+      aiRelevant:aiEnabled?pool.filter(j=>j.relevant===true).length:0,
+      aiUnavailable:aiEnabled?pool.filter(j=>j.relevant==null).length:0,
+      rejectedRoleCandidates,
       matches:matches.length,
       dryRun:config.dryRun,
       durationMs:Date.now()-start
