@@ -41,3 +41,32 @@ test('unrelated role gets a zero deterministic score',()=>{
   assert.equal(r.score,0);
   assert.equal(r.roleEligible,false);
 });
+
+test('accepts expanded analytics, Power Platform, and Fabric role titles',()=>{
+  for(const title of [
+    'BI Developer',
+    'Business Intelligence Developer',
+    'Data Analytics Lead',
+    'Analytics Manager',
+    'Reporting Developer',
+    'Power BI Consultant',
+    'Power Platform Developer',
+    'Microsoft Fabric Platform Administrator',
+    'Fabric Data Architect',
+    'MIS Executive'
+  ]){
+    assert.equal(isTargetRole({title}),true,title);
+  }
+});
+
+test('rejects unrelated and entry-level job titles',()=>{
+  for(const title of [
+    'Digital Marketing Executive',
+    'Customer Support Engineer',
+    'Java Developer',
+    'Power BI Developer Intern',
+    'Data Analyst Trainee'
+  ]){
+    assert.equal(isTargetRole({title}),false,title);
+  }
+});
