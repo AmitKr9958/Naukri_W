@@ -264,7 +264,17 @@ async function dismissOverlays(page) {
     const btn = page.locator(sel).first();
     if (await btn.isVisible().catch(() => false)) {
       await btn.click({force: true}).catch(() => {});
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(250);
+    }
+  }
+
+  // Naukri sometimes renders cookie consent as a text/div control, not a button.
+  // Click only the visible consent action; never attempt to bypass verification.
+  for (const label of ['Got it', 'Accept All', 'Accept']) {
+    const consent = page.getByText(label, {exact: true}).first();
+    if (await consent.isVisible().catch(() => false)) {
+      await consent.click({force: true}).catch(() => {});
+      await page.waitForTimeout(500);
     }
   }
 }
@@ -543,8 +553,11 @@ async function runSearchFromHomepage(page, c, q, loc) {
     () => page.goto(c.naukriUrl, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs}),
     {retries: c.maxRetries, delayMs: c.retryDelayMs}
   );
-  await page.waitForTimeout(c.pageDelayMs);
+  await page.waitForTimeout(Math.max(c.pageDelayMs, 1800));
   await assertNaukriReachable(page);
+  await dismissOverlays(page);
+  // Give consent dismissal and client-side hydration time to expose the search UI.
+  await page.waitForTimeout(1200);
   await dismissOverlays(page);
 
   const body = (await page.locator('body').innerText().catch(() => '')).slice(0, 12000);
