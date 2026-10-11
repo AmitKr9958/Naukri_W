@@ -700,36 +700,72 @@ async function pageWaitShort(field) {
 
 async function selectSortByDate(page) {
   try {
-    const sort = page.getByText('Sort by:', {exact: false}).first();
-    if (!(await sort.count())) return false;
-    await sort.click().catch(() => {});
-    await page.waitForTimeout(300);
-    const date = page.getByText('Date', {exact: true}).first();
-    if (!((await date.count()) && (await date.isVisible().catch(() => false)))) return false;
-    await date.click().catch(() => {});
-    await page.waitForTimeout(1000);
-    return true;
-  } catch {
-    return false;
-  }
+    const triggers = [
+      page.getByText(/Sort by/i).first(),
+      page.locator('[class*="sort" i]').filter({hasText: /sort/i}).first(),
+      page.locator('select').filter({hasText: /relevan|date/i}).first()
+    ];
+    let opened = false;
+    for (const trigger of triggers) {
+      if ((await trigger.count()) && (await trigger.isVisible().catch(() => false))) {
+        await trigger.click({force: true}).catch(() => {});
+        await page.waitForTimeout(400);
+        opened = true;
+        break;
+      }
+    }
+    if (!opened) return false;
+
+    const dateOptions = [
+      page.getByRole('option', {name: /^Date$/i}).first(),
+      page.getByText(/^Date$/i).first(),
+      page.getByText(/Date\s*[-–]\s*new to old/i).first(),
+      page.locator('[class*="sort" i]').getByText(/^Date$/i).first()
+    ];
+    for (const date of dateOptions) {
+      if ((await date.count()) && (await date.isVisible().catch(() => false))) {
+        await date.click({force: true}).catch(() => {});
+        await page.waitForTimeout(1200);
+        return true;
+      }
+    }
+    const select = page.locator('select').filter({hasText: /date|relevan/i}).first();
+    if (await select.count()) {
+      await select.selectOption({label: 'Date'}).catch(async () => {
+        await select.selectOption({value: 'date'}).catch(() => {});
+      });
+      await page.waitForTimeout(1200);
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 async function selectFreshnessLastDay(page) {
   try {
-    const freshness = page.getByText('Freshness', {exact: true}).first();
-    if (!(await freshness.count())) return false;
-    await freshness.click().catch(() => {});
-    await page.waitForTimeout(300);
+    const freshnessTriggers = [
+      page.getByText('Freshness', {exact: true}).first(),
+      page.getByText(/Freshness/i).first(),
+      page.locator('[class*="filter" i]').filter({hasText: /Freshness/i}).first()
+    ];
+    for (const freshness of freshnessTriggers) {
+      if (!(await freshness.count()) || !(await freshness.isVisible().catch(() => false))) continue;
+      await freshness.click({force: true}).catch(() => {});
+      await page.waitForTimeout(400);
+      break;
+    }
 
     const candidates = [
       page.getByText('Last 1 day', {exact: true}).first(),
       page.getByText('Last 1 Day', {exact: true}).first(),
-      page.getByText(/Last 1 day/i).first()
+      page.getByText(/Last\s*1\s*day/i).first(),
+      page.getByLabel(/Last\s*1\s*day/i).first(),
+      page.locator('label').filter({hasText: /Last\s*1\s*day/i}).first()
     ];
     for (const lastDay of candidates) {
       if ((await lastDay.count()) && (await lastDay.isVisible().catch(() => false))) {
-        await lastDay.click().catch(() => {});
-        await page.waitForTimeout(1000);
+        await lastDay.click({force: true}).catch(() => {});
+        await page.waitForTimeout(1200);
         return true;
       }
     }
