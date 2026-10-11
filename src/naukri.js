@@ -9,7 +9,21 @@ const slugify = s => String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').
 
 // Naukri changes result-card class names periodically. Keep legacy selectors and
 // add resilient class/semantic fallbacks for current job listing cards.
-const JOB_CARD_SELECTOR = '.cust-job-tuple,.srp-jobtuple-wrapper,[data-job-id],[class*="jobtuple" i],[class*="job-tuple" i],article:has(a[href*="job-listings-"])';
+// CSS-module classes (styles_*) and generic job-listing anchors are included
+// because the site regularly renames the tuple wrappers.
+const JOB_CARD_SELECTOR = [
+  '.cust-job-tuple',
+  '.srp-jobtuple-wrapper',
+  '[data-job-id]',
+  '[class*="jobtuple" i]',
+  '[class*="job-tuple" i]',
+  '[class*="styles_jlc" i]',
+  '[class*="styles_job-tuple" i]',
+  '[class*="styles_tuple" i]',
+  'article:has(a[href*="job-listings-"])',
+  'div:has(> a[href*="job-listings-"])',
+  'li:has(a[href*="job-listings-"])'
+].join(',');
 
 export function parseAgeHours(raw) {
   const s = String(raw || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -113,11 +127,27 @@ async function recognizedJobCardCount(page) {
   // Naukri has used both "job-listings-<slug>" and "job-listings/<slug>"
   // URL shapes. Count listing links first so unrelated wrappers/filters cannot
   // hide a valid results page just because an old card class is present.
-  const listingLinks = await page.locator('a[href*="job-listings"],a[href*="/job/"]').count().catch(() => 0);
+  const linkSelectors = [
+    'a[href*="job-listings-"]',
+    'a[href*="job-listings"]',
+    'a[href*="/job/"]',
+    'a[href*="jobid="]',
+    'a[href*="jd="]'
+  ].join(',');
+  const listingLinks = await page.locator(linkSelectors).count().catch(() => 0);
   if (listingLinks) return listingLinks;
 
   // Fallback for layouts where card wrappers render before their anchors.
-  return page.locator(JOB_CARD_SELECTOR).count().catch(() => 0);
+  const structured = await page.locator(JOB_CARD_SELECTOR).count().catch(() => 0);
+  if (structured) return structured;
+
+  // Text-based fallback: results header ("1 - 20 of 12488") or multiple
+  // posted-age labels mean the listings are on the page even when selectors lag.
+  const body = (await page.locator('body').innerText().catch(() => '')).slice(0, 6000);
+  if (/\b\d+\s*[-–]\s*\d+\s+of\s+\d+/i.test(body)) return 1;
+  const ageHits = (body.match(/\b(?:just now|today|yesterday|\d+\s*(?:minute|min|hour|hr|day|week|month)s?\s*ago)\b/gi) || []).length;
+  if (ageHits >= 2) return ageHits;
+  return 0;
 }
 
 async function collectJobCardLocators(page) {
@@ -125,7 +155,10 @@ async function collectJobCardLocators(page) {
   // nests several links inside cards, so rediscovering the first link later can
   // assign a different job URL to the card and lose valid listings.
   const structured = await page.locator(JOB_CARD_SELECTOR).all();
-  const links = await page.locator('a[href*="job-listings"],a[href*="/job/"]').all();
+  // Prefer the canonical job-listings path; also accept /job/ deep links and id params.
+  const links = await page
+    .locator('a[href*="job-listings-"],a[href*="job-listings"],a[href*="/job/"],a[href*="jobid="],a[href*="jd="]')
+    .all();
   const cards = [];
   const seen = new Set();
 
@@ -707,14 +740,28 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
   }
   await page.waitForTimeout(Math.max(2000, c.pageDelayMs));
 
-  // Wait for either results or an error page
+  // Wait for either results or an error page. Naukri often paints the filter
+  // chrome first and hydrates job cards a moment later; give it extra time.
   await page
-    .waitForSelector(`${JOB_CARD_SELECTOR},a[href*="job-listings"],a[href*="/job/"],.styles_jlc__main,text=/Oops! Something went wrong/i`, {
-      timeout: 15000
-    })
+    .waitForSelector(
+      `${JOB_CARD_SELECTOR},a[href*="job-listings"],a[href*="/job/"],.styles_jlc__main,[class*="styles_jlc" i],text=/Oops! Something went wrong/i,text=/\\d+\\s*[-–]\\s*\\d+\\s+of\\s+\\d+/i`,
+      {timeout: 20000}
+    )
     .catch(() => {});
 
-  const resultCountAfterSubmit = await recognizedJobCardCount(page);
+  // Trigger lazy-loaded cards that appear only after a small scroll.
+  await page.evaluate(() => window.scrollBy(0, 400)).catch(() => {});
+  await page.waitForTimeout(1500);
+
+  let resultCountAfterSubmit = await recognizedJobCardCount(page);
+  if (!resultCountAfterSubmit) {
+    // One extra hydration window before declaring failure.
+    await page.waitForTimeout(2500);
+    await page.evaluate(() => window.scrollBy(0, 600)).catch(() => {});
+    await page.waitForTimeout(1000);
+    resultCountAfterSubmit = await recognizedJobCardCount(page);
+  }
+
   if (!resultCountAfterSubmit) {
     const retryBody = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 1800);
     if (attempt < 1 && /cookie policy|privacy policy/i.test(retryBody) && /got it/i.test(retryBody)) {
@@ -723,13 +770,23 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
       console.warn(JSON.stringify({search:q,location:loc,attempt,message:'Cookie consent blocked result rendering; retrying search once'}));
       return runSearchFromHomepage(page,c,q,loc,attempt+1);
     }
+    // Retry once when the results header is present but cards have not painted yet.
+    if (attempt < 1 && /\b\d+\s*[-–]\s*\d+\s+of\s+\d+/i.test(retryBody)) {
+      console.warn(JSON.stringify({
+        search: q,
+        location: loc,
+        attempt,
+        message: 'Results header present but job cards not yet recognized; retrying search once'
+      }));
+      return runSearchFromHomepage(page, c, q, loc, attempt + 1);
+    }
     const inputs = await collectInputDiagnostics(page);
     const title = await page.title().catch(() => '');
-    const body = (await page.locator('body').innerText().catch(() => '')).replace(/\\s+/g, ' ').slice(0, 1800);
+    const body = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 1800);
     const pageUrl = page.url();
     const pageKind = /captcha|security verification|verify you are human|robot/i.test(body)
       ? 'verification-required'
-      : /access denied|errors\\.edgesuite\\.net|permission to access/i.test(title + ' ' + body)
+      : /access denied|errors\.edgesuite\.net|permission to access/i.test(title + ' ' + body)
         ? 'access-denied'
         : /oops! something went wrong/i.test(body)
           ? 'naukri-error-page'
@@ -834,6 +891,7 @@ export async function searchJobs(page, c) {
 
         let cards = await recognizedJobCardCount(page);
         if (!cards) {
+          await page.evaluate(() => window.scrollBy(0, 500)).catch(() => {});
           await page.waitForTimeout(2500);
           cards = await recognizedJobCardCount(page);
         }
