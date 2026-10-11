@@ -737,7 +737,7 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
 
   // Wait for either results or an error page
   await page
-    .waitForSelector(`${JOB_CARD_SELECTOR},.styles_jlc__main,text=/Oops! Something went wrong/i`, {
+    .waitForSelector(`${JOB_CARD_SELECTOR},a[href*="job-listings"],a[href*="/job/"],.styles_jlc__main,text=/Oops! Something went wrong/i`, {
       timeout: 15000
     })
     .catch(() => {});
