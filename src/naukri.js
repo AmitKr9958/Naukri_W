@@ -987,7 +987,7 @@ export async function searchJobs(page, c) {
   const seen = new Set();
 
   // Search broadly, then let the deterministic matcher + AI do the precise role fit.
-  const searchQueries = [...new Set((c.searchQueries || c.roles).map(x => String(x).trim()).filter(Boolean))].slice(0, 4);
+  const searchQueries = [...new Set((c.searchQueries || c.roles).map(x => String(x).trim()).filter(Boolean))];
   // Gurgaon and Gurugram are the same target for this watcher; searching both
   // produces almost identical Naukri pages and wastes a full search cycle.
   const configuredLocations = c.locations.length ? [...c.locations] : [''];
