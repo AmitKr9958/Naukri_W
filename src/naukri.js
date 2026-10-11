@@ -867,6 +867,18 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
   await assertNaukriReachable(page);
   await dismissOverlays(page);
 
+  // Parallel tabs sometimes land on a blank intermediate document; wait/reload once.
+  let earlyBody = (await page.locator('body').innerText().catch(() => '')).trim();
+  if (!earlyBody) {
+    await page.waitForTimeout(Math.max(settleMs, 600));
+    earlyBody = (await page.locator('body').innerText().catch(() => '')).trim();
+    if (!earlyBody) {
+      await page.reload({waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs}).catch(() => {});
+      await page.waitForTimeout(settleMs);
+      await dismissOverlays(page);
+    }
+  }
+
   // If Naukri bounced us back to the homepage, retry once.
   if (isNaukriHomepageUrl(page.url()) && attempt < 1) {
     console.warn(JSON.stringify({
