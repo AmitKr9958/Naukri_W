@@ -320,14 +320,11 @@ export async function openNaukri(c) {
 }
 
 async function dismissOverlays(page) {
-  const labels = ['Accept All', 'Accept', 'I Agree', 'Got it', 'OK', 'Close'];
   const selectors = [
     'button:has-text("Accept All")',
     'button:has-text("Accept")',
     'button:has-text("I Agree")',
     'button:has-text("Got it")',
-    'button:has-text("OK")',
-    'button:has-text("Close")',
     '[role="button"]:has-text("Got it")',
     '[aria-label="Close"]',
     '.cross',
@@ -336,60 +333,35 @@ async function dismissOverlays(page) {
     '.naukri-cookie-accept'
   ];
 
-  // Prefer normal, visible controls. Cookie consent is dismissed only through
-  // the page's own action; verification/CAPTCHA challenges are never bypassed.
   for (const selector of selectors) {
     const control = page.locator(selector).first();
     if (await control.isVisible().catch(() => false)) {
-      await control.click({timeout: 2500}).catch(() => {});
-      await page.waitForTimeout(350);
+      const clicked = await control.click({timeout: 2500}).then(() => true).catch(() => false);
+      if (clicked) await page.waitForTimeout(500);
     }
   }
 
-  // Current Naukri cookie banners sometimes render "Got it" as a div/span
-  // whose click handler belongs to a clickable ancestor rather than a button.
-  for (const label of labels) {
-    const textNode = page.getByText(label, {exact: true}).first();
-    if (!(await textNode.isVisible().catch(() => false))) continue;
-
-    let clicked = false;
-    let candidate = textNode;
-    for (let depth = 0; depth < 5; depth++) {
-      if (await candidate.isVisible().catch(() => false)) {
-        const tag = await candidate.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
-        const role = await candidate.getAttribute('role').catch(() => '');
-        const tabIndex = await candidate.getAttribute('tabindex').catch(() => null);
-        const clickable = ['button', 'a'].includes(tag) || role === 'button' || tabIndex === '0';
-        if (clickable) {
-          await candidate.click({timeout: 2500}).catch(() => {});
-          clicked = true;
-          break;
-        }
+  // Naukri's current consent banner may render "Got it" as plain text inside
+  // a clickable div. Click its nearest interactive ancestor using the page DOM.
+  await page.evaluate(() => {
+    const norm = value => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+    const nodes = [...document.querySelectorAll('body *')];
+    const gotIt = nodes.find(el => norm(el.textContent) === 'got it' && el.children.length === 0);
+    if (!gotIt) return;
+    let target = gotIt;
+    for (let depth = 0; depth < 6 && target; depth++, target = target.parentElement) {
+      const style = window.getComputedStyle(target);
+      const interactive = target.matches('button,a,[role="button"],[tabindex="0"]') ||
+        style.cursor === 'pointer' || typeof target.onclick === 'function';
+      if (interactive) {
+        target.click();
+        return;
       }
-      const parent = candidate.locator('xpath=..');
-      if (!(await parent.count().catch(() => 0))) break;
-      candidate = parent;
     }
+    gotIt.click();
+  }).catch(() => {});
 
-    if (!clicked) {
-      await textNode.click({force: true, timeout: 2500}).catch(async () => {
-        await textNode.evaluate(el => {
-          let target = el;
-          for (let depth = 0; depth < 5 && target; depth++, target = target.parentElement) {
-            if (target.matches?.('button,a,[role="button"],[tabindex="0"]')) {
-              target.click();
-              return;
-            }
-          }
-          el.click();
-        }).catch(() => {});
-      });
-    }
-    await page.waitForTimeout(700);
-  }
-
-  // Allow React to remove the banner before search-form detection starts.
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(900);
 }
 
 async function findVisible(page, selectors) {
