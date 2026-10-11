@@ -17,7 +17,7 @@ while ($true) {
   try {
     Add-Content -LiteralPath $out -Value ("[{0}] Starting Naukri watcher process." -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
     $commandLine = '"' + $node + '" "' + $entry + '" 1>> "' + $out + '" 2>> "' + $err + '"'
-    & $cmd /d /s /c $commandLine
+    & $cmd /d /c $commandLine
     $exitCode = $LASTEXITCODE
     Add-Content -LiteralPath $err -Value ("[{0}] Watcher process exited with code {1}; restarting in 60 seconds." -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $exitCode)
   } catch {
