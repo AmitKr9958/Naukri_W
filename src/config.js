@@ -26,7 +26,7 @@ export const config={
   maxPagesPerSearch:positiveInt(process.env.MAX_PAGES_PER_SEARCH,1),
   pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,400),
   // Same browser, multiple tabs (1–4). Higher is faster but can trigger bot checks.
-  searchConcurrency:positiveInt(process.env.SEARCH_CONCURRENCY,3),
+  searchConcurrency:positiveInt(process.env.SEARCH_CONCURRENCY,5),
   telegramToken:process.env.TELEGRAM_BOT_TOKEN||'',
   telegramChatId:process.env.TELEGRAM_CHAT_ID||'',
   aiEnabled:bool(process.env.AI_ENABLED,false),

@@ -1007,7 +1007,7 @@ export async function searchJobs(page, c) {
   }
 
   // Same browser, multiple tabs. Cap concurrency to avoid Naukri rate/bot pressure.
-  const concurrency = Math.max(1, Math.min(Number(c.searchConcurrency) || 3, 4));
+  const concurrency = Math.max(1, Math.min(Number(c.searchConcurrency) || 5, 5));
   const context = page.context();
   console.info(JSON.stringify({
     message: 'Parallel search starting',
