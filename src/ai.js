@@ -11,22 +11,41 @@ const clip=s=>String(s||'').slice(0,12000);
 export function redactForAI(text){return clip(redact(text));}
 
 function parseJson(raw){
-  const cleaned=String(raw||'').replace(/```json|```/gi,'').trim();
+  const cleaned=String(raw||'').replace(/```json|\`\`\`/gi,'').trim();
   const start=cleaned.indexOf('{');
   const end=cleaned.lastIndexOf('}');
-  if(start<0||end<=start)throw new Error('AI did not return JSON');
-  return JSON.parse(cleaned.slice(start,end+1));
+  if(start<0||end<=start)throw new Error('AI returned no JSON object (content may be empty or reasoning-only)');
+  let parsed;
+  try{parsed=JSON.parse(cleaned.slice(start,end+1));}
+  catch{throw new Error('AI returned invalid JSON');}
+  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new Error('AI JSON must be an object');
+  return parsed;
+}
+
+function messageText(message){
+  if(typeof message?.content==='string'&&message.content.trim())return message.content;
+  if(Array.isArray(message?.content)){
+    const text=message.content.filter(part=>typeof part?.text==='string').map(part=>part.text).join('\n');
+    if(text.trim())return text;
+  }
+  // Some reasoning models place the answer in a separate field when content is empty.
+  if(typeof message?.reasoning==='string'&&message.reasoning.trim())return message.reasoning;
+  if(Array.isArray(message?.reasoning_details)){
+    const text=message.reasoning_details.filter(part=>typeof part?.text==='string').map(part=>part.text).join('\n');
+    if(text.trim())return text;
+  }
+  throw new Error('AI response had empty message content');
 }
 
 async function analyzeOne(c,job,resume){
   const body={model:c.aiModel,messages:[
-    {role:'system',content:'You are a strict job-matching evaluator. Return valid JSON only. Judge fit against the candidate resume, not generic desirability. Do not infer private information.'},
+    {role:'system',content:'You are a strict job-matching evaluator. Reply with ONE valid JSON object only: {"relevant":true,"fit":0,"roleFit":0,"reason":"short sentence","missing":[]}. Keys required: relevant (boolean), fit (number 0-100), roleFit (number 0-100), reason (short non-empty string), missing (array of up to 3 strings). Judge fit against the candidate resume only. Do not infer private information. Relevant must be false for a clearly unrelated role even if transferable skills exist. Do not include markdown, code fences, preamble, or chain-of-thought.'},
     {role:'user',content:JSON.stringify({
       resume,
       job:{title:redact(job.title),company:redact(job.company),location:redact(job.location),description:redactForAI(job.description)},
-      task:'Evaluate this job for the candidate. Return JSON: relevant (boolean), fit (0-100), roleFit (0-100), reason (one short sentence), missing (up to 3 skills). Relevant must be false for a clearly unrelated role even if transferable skills exist.'
+      task:'Evaluate this job for the candidate and return the required JSON object.'
     })}
-  ],temperature:0.1,max_tokens:700};
+  ],temperature:0.1,max_tokens:1200,stream:false};
 
   const data=await withRetry(async()=>{
     const r=await fetch(c.aiBaseUrl.replace(/\/$/,'')+'/chat/completions',{
@@ -35,19 +54,31 @@ async function analyzeOne(c,job,resume){
       body:JSON.stringify(body),
       signal:AbortSignal.timeout(c.httpTimeoutMs)
     });
-    if(!r.ok)throw new Error('AI HTTP '+r.status);
-    const text=await r.text();
-    const clean=text.replace(/^data:\s*/gm,'').replace(/\n?data:\s*\[DONE\]\s*$/,'').trim();
-    return JSON.parse(clean);
+    const responseText=await r.text();
+    if(!r.ok){
+      let detail='';
+      try{detail=String(JSON.parse(responseText)?.error?.message||'');}catch{}
+      detail=detail.replace(/Bearer\s+\S+/gi,'Bearer [REDACTED]').slice(0,180);
+      throw new Error('AI HTTP '+r.status+(detail?': '+detail:''));
+    }
+    let response;
+    try{response=JSON.parse(responseText);}
+    catch{throw new Error('AI endpoint returned invalid response JSON');}
+    return response;
   },{retries:1,delayMs:c.retryDelayMs});
 
-  const message=data?.choices?.[0]?.message||{};
-  const parsed=parseJson(message.content||message.reasoning||'');
-  const aiFit=Math.max(0,Math.min(100,Number(parsed.fit)||0));
-  const roleFit=Math.max(0,Math.min(100,Number(parsed.roleFit)||0));
-  const relevant=parsed.relevant===true;
+  const message=data?.choices?.[0]?.message;
+  if(!message)throw new Error('AI response is missing choices[0].message');
+  const parsed=parseJson(messageText(message));
+  if(typeof parsed.relevant!=='boolean')throw new Error('AI relevant must be boolean');
+  const aiFit=Number(parsed.fit);
+  const roleFit=Number(parsed.roleFit);
+  if(!Number.isFinite(aiFit)||aiFit<0||aiFit>100)throw new Error('AI fit must be 0-100');
+  if(!Number.isFinite(roleFit)||roleFit<0||roleFit>100)throw new Error('AI roleFit must be 0-100');
+  if(typeof parsed.reason!=='string'||!parsed.reason.trim())throw new Error('AI reason is missing');
+  const relevant=parsed.relevant;
   const finalScore=relevant?Math.round(job.score*0.4+aiFit*0.45+roleFit*0.15):Math.min(job.score,Math.round(aiFit*0.4));
-  return {...job,relevant,aiFit,roleFit,aiReason:String(parsed.reason||''),aiMissing:Array.isArray(parsed.missing)?parsed.missing.slice(0,3):[],finalScore};
+  return {...job,relevant,aiFit,roleFit,aiReason:parsed.reason.trim(),aiMissing:Array.isArray(parsed.missing)?parsed.missing.filter(x=>typeof x==='string').slice(0,3):[],finalScore};
 }
 
 export async function analyzeJobs(c,jobs,resumeText){
@@ -61,7 +92,11 @@ export async function analyzeJobs(c,jobs,resumeText){
       const i=next++;
       if(i>=jobs.length)return;
       try{results[i]=await analyzeOne(c,jobs[i],resume);}
-      catch{results[i]={...jobs[i],relevant:null,aiFit:null,roleFit:null,aiReason:'AI unavailable; rule-based score retained.',aiMissing:[],finalScore:jobs[i].score};}
+      catch(err){
+        const error=String(err?.message||err||'Unknown AI error').replace(/Bearer\s+\S+/gi,'Bearer [REDACTED]').slice(0,300);
+        console.warn(JSON.stringify({event:'ai-scoring-failed',title:String(jobs[i].title||'').slice(0,120),model:c.aiModel,error}));
+        results[i]={...jobs[i],relevant:null,aiFit:null,roleFit:null,aiReason:'AI unavailable; rule-based score retained.',aiMissing:[],finalScore:jobs[i].score};
+      }
     }
   };
   await Promise.all(Array.from({length:concurrency},()=>worker()));
