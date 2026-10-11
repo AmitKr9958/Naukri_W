@@ -987,8 +987,6 @@ export async function searchJobs(page, c) {
   const seen = new Set();
 
   // Search broadly, then let the deterministic matcher + AI do the precise role fit.
-  // This avoids repeatedly searching near-identical Naukri result sets for
-  // Power BI Developer/Lead/Engineer/Consultant separately.
   const searchQueries = [...new Set((c.searchQueries || c.roles).map(x => String(x).trim()).filter(Boolean))].slice(0, 4);
   // Gurgaon and Gurugram are the same target for this watcher; searching both
   // produces almost identical Naukri pages and wastes a full search cycle.
@@ -1001,137 +999,167 @@ export async function searchJobs(page, c) {
     return [canonical, loc];
   })).values()];
 
+  const tasks = [];
   for (const q of searchQueries) {
     for (const loc of searchLocations) {
-      const searchResult = await runSearchFromHomepage(page, c, q, loc);
-      let url = searchResult.url;
-      const sortedByDate = searchResult.sortedByDate;
-      console.info(JSON.stringify({
-        search: q,
-        location: loc || 'ALL',
-        sortedByDate,
-        maxAgeHours: c.maxAgeHours,
-        message: 'Search result page ready'
-      }));
-      const visitedPages = new Set();
-
-      for (let pageNo = 1; pageNo <= Math.min(c.maxPagesPerSearch, 2) && url; pageNo++) {
-        if (visitedPages.has(url)) break;
-        visitedPages.add(url);
-
-        const body = (await page.locator('body').innerText().catch(() => '')).slice(0, 12000);
-        if (/captcha|security verification|verify you are human|robot/i.test(body)) {
-          throw new Error(
-            'Naukri requires CAPTCHA/security verification. Complete it with npm run login, then restart the watcher.'
-          );
-        }
-        if (/login|register/i.test(page.url())) {
-          throw new Error('Naukri session expired during search. Automatic login did not restore the session.');
-        }
-
-        let cards = await recognizedJobCardCount(page);
-        if (!cards) {
-          await page.evaluate(() => window.scrollBy(0, 500)).catch(() => {});
-          await page.waitForTimeout(Math.min(c.pageDelayMs, 600));
-          cards = await recognizedJobCardCount(page);
-        }
-        if (!cards) {
-          console.warn(
-            JSON.stringify(
-              {
-                search: q,
-                location: loc || 'ALL',
-                page: pageNo,
-                cards: 0,
-                message: 'No Naukri job cards or job-listing links found after homepage form search',
-                url: page.url()
-              },
-              null,
-              0
-            )
-          );
-          break;
-        }
-
-        const extracted = await extractFreshCards(page, c);
-        const isRemoteSearch = /^remote$/i.test(String(loc).trim());
-        const eligibleFresh = isRemoteSearch
-          ? extracted.fresh.filter(job => remoteJobMatchesPreferredLocation(job, c.locations))
-          : extracted.fresh;
-        const rejectedByRemoteLocation = extracted.fresh.length - eligibleFresh.length;
-
-        if (!eligibleFresh.length) {
-          console.warn(
-            JSON.stringify(
-              {
-                search: q,
-                location: loc || 'ALL',
-                page: pageNo,
-                cards,
-                freshCards: eligibleFresh.length,
-                freshnessQualifiedCards: extracted.fresh.length,
-                rejectedByFreshness: extracted.rejectedByFreshness,
-                rejectedByRemoteLocation,
-                diagnostics: extracted.diagnostics
-              },
-              null,
-              0
-            )
-          );
-        }
-        console.info(
-          JSON.stringify({
-            search: q,
-            location: loc || 'ALL',
-            page: pageNo,
-            cards,
-            uniqueCards: extracted.uniqueCards,
-            freshCards: eligibleFresh.length,
-            freshnessQualifiedCards: extracted.fresh.length,
-            rejectedByFreshness: extracted.rejectedByFreshness,
-            rejectedByRemoteLocation,
-            newestAgeHours: extracted.newestAgeHours,
-            oldestAgeHours: extracted.oldestAgeHours,
-            maxAgeHours: c.maxAgeHours
-          })
-        );
-
-        for (const job of eligibleFresh) {
-          if (!seen.has(job.url)) {
-            seen.add(job.url);
-            out.push(job);
-          }
-        }
-
-        // Only stop early when date-sort is confirmed AND this page is entirely stale.
-        // Without date-sort, page 2 may still hold newer jobs under Recommended ranking.
-        if (sortedByDate &&
-            (extracted.allParsedOlderThanMax ||
-              (extracted.newestAgeHours != null && extracted.newestAgeHours > c.maxAgeHours))) {
-          console.info(JSON.stringify({
-            search: q,
-            location: loc || 'ALL',
-            page: pageNo,
-            message: 'Stopping pagination — date-sorted page is older than the freshness window.',
-            newestAgeHours: extracted.newestAgeHours,
-            maxAgeHours: c.maxAgeHours,
-            sortedByDate
-          }));
-          break;
-        }
-
-        // If sort-by-date failed, always allow up to 2 pages so fresh jobs are not missed.
-        const pageCap = sortedByDate
-          ? Math.min(c.maxPagesPerSearch, 2)
-          : Math.max(Math.min(c.maxPagesPerSearch, 2), 2);
-        const next = pageNo < pageCap ? await nextPageUrl(page, url) : null;
-        if (!next) break;
-        await page.goto(next, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
-        await page.waitForTimeout(Math.min(c.pageDelayMs, 600));
-        url = page.url();
-      }
+      tasks.push({q, loc});
     }
   }
 
+  // Same browser, multiple tabs. Cap concurrency to avoid Naukri rate/bot pressure.
+  const concurrency = Math.max(1, Math.min(Number(c.searchConcurrency) || 3, 4));
+  const context = page.context();
+  console.info(JSON.stringify({
+    message: 'Parallel search starting',
+    tabs: concurrency,
+    tasks: tasks.length,
+    queries: searchQueries,
+    locations: searchLocations
+  }));
+
+  async function runOneSearch(tab, q, loc) {
+    const jobs = [];
+    const searchResult = await runSearchFromHomepage(tab, c, q, loc);
+    let url = searchResult.url;
+    const sortedByDate = searchResult.sortedByDate;
+    console.info(JSON.stringify({
+      search: q,
+      location: loc || 'ALL',
+      sortedByDate,
+      maxAgeHours: c.maxAgeHours,
+      message: 'Search result page ready'
+    }));
+    const visitedPages = new Set();
+
+    for (let pageNo = 1; pageNo <= Math.min(c.maxPagesPerSearch, 2) && url; pageNo++) {
+      if (visitedPages.has(url)) break;
+      visitedPages.add(url);
+
+      const body = (await tab.locator('body').innerText().catch(() => '')).slice(0, 12000);
+      if (/captcha|security verification|verify you are human|robot/i.test(body)) {
+        throw new Error(
+          'Naukri requires CAPTCHA/security verification. Complete it with npm run login, then restart the watcher.'
+        );
+      }
+      if (/login|register/i.test(tab.url()) && !/job/i.test(tab.url())) {
+        throw new Error('Naukri session expired during search. Automatic login did not restore the session.');
+      }
+
+      let cards = await recognizedJobCardCount(tab);
+      if (!cards) {
+        await tab.evaluate(() => window.scrollBy(0, 500)).catch(() => {});
+        await tab.waitForTimeout(Math.min(c.pageDelayMs, 600));
+        cards = await recognizedJobCardCount(tab);
+      }
+      if (!cards) {
+        console.warn(JSON.stringify({
+          search: q,
+          location: loc || 'ALL',
+          page: pageNo,
+          cards: 0,
+          message: 'No Naukri job cards or job-listing links found after homepage form search',
+          url: tab.url()
+        }));
+        break;
+      }
+
+      const extracted = await extractFreshCards(tab, c);
+      const isRemoteSearch = /^remote$/i.test(String(loc).trim());
+      const eligibleFresh = isRemoteSearch
+        ? extracted.fresh.filter(job => remoteJobMatchesPreferredLocation(job, c.locations))
+        : extracted.fresh;
+      const rejectedByRemoteLocation = extracted.fresh.length - eligibleFresh.length;
+
+      if (!eligibleFresh.length) {
+        console.warn(JSON.stringify({
+          search: q,
+          location: loc || 'ALL',
+          page: pageNo,
+          cards,
+          freshCards: eligibleFresh.length,
+          freshnessQualifiedCards: extracted.fresh.length,
+          rejectedByFreshness: extracted.rejectedByFreshness,
+          rejectedByRemoteLocation,
+          diagnostics: extracted.diagnostics
+        }));
+      }
+      console.info(JSON.stringify({
+        search: q,
+        location: loc || 'ALL',
+        page: pageNo,
+        cards,
+        uniqueCards: extracted.uniqueCards,
+        freshCards: eligibleFresh.length,
+        freshnessQualifiedCards: extracted.fresh.length,
+        rejectedByFreshness: extracted.rejectedByFreshness,
+        rejectedByRemoteLocation,
+        newestAgeHours: extracted.newestAgeHours,
+        oldestAgeHours: extracted.oldestAgeHours,
+        maxAgeHours: c.maxAgeHours
+      }));
+
+      for (const job of eligibleFresh) jobs.push(job);
+
+      if (sortedByDate &&
+          (extracted.allParsedOlderThanMax ||
+            (extracted.newestAgeHours != null && extracted.newestAgeHours > c.maxAgeHours))) {
+        console.info(JSON.stringify({
+          search: q,
+          location: loc || 'ALL',
+          page: pageNo,
+          message: 'Stopping pagination — date-sorted page is older than the freshness window.',
+          newestAgeHours: extracted.newestAgeHours,
+          maxAgeHours: c.maxAgeHours,
+          sortedByDate
+        }));
+        break;
+      }
+
+      const pageCap = sortedByDate
+        ? Math.min(c.maxPagesPerSearch, 2)
+        : Math.max(Math.min(c.maxPagesPerSearch, 2), 2);
+      const next = pageNo < pageCap ? await nextPageUrl(tab, url) : null;
+      if (!next) break;
+      await tab.goto(next, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
+      await tab.waitForTimeout(Math.min(c.pageDelayMs, 600));
+      url = tab.url();
+    }
+    return jobs;
+  }
+
+  // Worker pool: reuse tabs across tasks.
+  let cursor = 0;
+  async function worker(workerId) {
+    const tab = workerId === 0 ? page : await context.newPage();
+    tab.setDefaultTimeout(c.actionTimeoutMs);
+    try {
+      while (true) {
+        const idx = cursor++;
+        if (idx >= tasks.length) break;
+        const {q, loc} = tasks[idx];
+        try {
+          const jobs = await runOneSearch(tab, q, loc);
+          for (const job of jobs) {
+            if (!seen.has(job.url)) {
+              seen.add(job.url);
+              out.push(job);
+            }
+          }
+        } catch (err) {
+          console.warn(JSON.stringify({
+            search: q,
+            location: loc || 'ALL',
+            message: 'Search combo failed',
+            error: String(err?.message || err).slice(0, 400)
+          }));
+        }
+      }
+    } finally {
+      if (workerId !== 0) await tab.close().catch(() => {});
+    }
+  }
+
+  await Promise.all(Array.from({length: Math.min(concurrency, tasks.length)}, (_, i) => worker(i)));
   return out;
 }
+
