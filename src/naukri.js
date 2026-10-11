@@ -317,41 +317,63 @@ export async function openNaukri(c) {
 }
 
 async function dismissOverlays(page) {
-  const dismissers = [
-    'button:has-text("Accept")',
+  const labels = ['Accept All', 'Accept', 'I Agree', 'Got it', 'OK', 'Close'];
+  const selectors = [
     'button:has-text("Accept All")',
+    'button:has-text("Accept")',
     'button:has-text("I Agree")',
     'button:has-text("Got it")',
     'button:has-text("OK")',
     'button:has-text("Close")',
+    '[role="button"]:has-text("Got it")',
     '[aria-label="Close"]',
     '.cross',
     '.btn-close',
     '#close-popup',
     '.naukri-cookie-accept'
   ];
-  for (const sel of dismissers) {
-    const btn = page.locator(sel).first();
-    if (await btn.isVisible().catch(() => false)) {
-      await btn.click({force: true}).catch(() => {});
-      await page.waitForTimeout(250);
+
+  // Prefer normal, visible controls. Cookie consent is dismissed only through
+  // the page's own action; verification/CAPTCHA challenges are never bypassed.
+  for (const selector of selectors) {
+    const control = page.locator(selector).first();
+    if (await control.isVisible().catch(() => false)) {
+      await control.click({timeout: 2500}).catch(() => {});
+      await page.waitForTimeout(350);
     }
   }
 
-  // Naukri sometimes renders cookie consent as a text/div control, not a button.
-  // Click only the visible consent action; never attempt to bypass verification.
-  for (const label of ['Got it', 'Accept All', 'Accept']) {
-    const consent = page.getByText(label, {exact: true}).first();
-    if (await consent.isVisible().catch(() => false)) {
-      // Some Naukri consent banners attach the handler to a parent container,
-      // not to the visible text node. Try Playwright click first, then a normal
-      // DOM click on the same visible consent action if the click is swallowed.
-      await consent.click({force: true, timeout: 2500}).catch(async () => {
-        await consent.evaluate(el => {
+  // Current Naukri cookie banners sometimes render "Got it" as a div/span
+  // whose click handler belongs to a clickable ancestor rather than a button.
+  for (const label of labels) {
+    const textNode = page.getByText(label, {exact: true}).first();
+    if (!(await textNode.isVisible().catch(() => false))) continue;
+
+    let clicked = false;
+    let candidate = textNode;
+    for (let depth = 0; depth < 5; depth++) {
+      if (await candidate.isVisible().catch(() => false)) {
+        const tag = await candidate.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
+        const role = await candidate.getAttribute('role').catch(() => '');
+        const tabIndex = await candidate.getAttribute('tabindex').catch(() => null);
+        const clickable = ['button', 'a'].includes(tag) || role === 'button' || tabIndex === '0';
+        if (clickable) {
+          await candidate.click({timeout: 2500}).catch(() => {});
+          clicked = true;
+          break;
+        }
+      }
+      const parent = candidate.locator('xpath=..');
+      if (!(await parent.count().catch(() => 0))) break;
+      candidate = parent;
+    }
+
+    if (!clicked) {
+      await textNode.click({force: true, timeout: 2500}).catch(async () => {
+        await textNode.evaluate(el => {
           let target = el;
-          for (let depth = 0; depth < 4 && target; depth++, target = target.parentElement) {
-            const text = String(target.innerText || '').trim();
-            if (text.toLowerCase() === label.toLowerCase()) {
+          for (let depth = 0; depth < 5 && target; depth++, target = target.parentElement) {
+            if (target.matches?.('button,a,[role="button"],[tabindex="0"]')) {
               target.click();
               return;
             }
@@ -359,9 +381,12 @@ async function dismissOverlays(page) {
           el.click();
         }).catch(() => {});
       });
-      await page.waitForTimeout(700);
     }
+    await page.waitForTimeout(700);
   }
+
+  // Allow React to remove the banner before search-form detection starts.
+  await page.waitForTimeout(250);
 }
 
 async function findVisible(page, selectors) {
