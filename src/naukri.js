@@ -662,7 +662,7 @@ async function runSearchFromHomepage(page, c, q, loc) {
     maxAgeHours: c.maxAgeHours,
     freshnessParam: '1'
   }));
-  return resultUrl;
+  return {url: resultUrl, sortedByDate};
 }
 
 export async function searchJobs(page, c) {
@@ -686,7 +686,16 @@ export async function searchJobs(page, c) {
 
   for (const q of searchQueries) {
     for (const loc of searchLocations) {
-      let url = await runSearchFromHomepage(page, c, q, loc);
+      const searchResult = await runSearchFromHomepage(page, c, q, loc);
+      let url = searchResult.url;
+      const sortedByDate = searchResult.sortedByDate;
+      console.info(JSON.stringify({
+        search: q,
+        location: loc || 'ALL',
+        sortedByDate,
+        maxAgeHours: c.maxAgeHours,
+        message: 'Search result page ready'
+      }));
       const visitedPages = new Set();
 
       for (let pageNo = 1; pageNo <= Math.min(c.maxPagesPerSearch, 2) && url; pageNo++) {
@@ -776,10 +785,10 @@ export async function searchJobs(page, c) {
           }
         }
 
-        // Results are sorted newest-first when the Naukri sort control succeeds.
-        // If every parsed posting on this page is already older than the configured
-        // freshness window, later pages cannot contain a valid fresh match.
-        if (extracted.allParsedOlderThanMax) {
+        // Only stop early when Naukri confirmed newest-first sorting. When the
+        // sort control is unavailable, page 2 may still contain newer jobs, so
+        // continue within the configured page cap even if page 1 is stale.
+        if (sortedByDate && extracted.allParsedOlderThanMax) {
           console.info(JSON.stringify({
             search: q,
             location: loc || 'ALL',
