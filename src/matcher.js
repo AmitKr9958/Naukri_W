@@ -1,6 +1,25 @@
 const norm=s=>String(s||'').toLowerCase();
 const tokens=s=>new Set(norm(s).split(/[^a-z0-9+#.-]+/).filter(x=>x.length>1));
 
+// Gate on the job title before scoring. Skills mentioned in an unrelated job
+// description must never turn a software, marketing, support, or internship role
+// into a Power BI / analytics match.
+export function isTargetRole(job){
+  const title=norm(job?.title).replace(/\\s+/g,' ').trim();
+  if(!title) return false;
+  if(/\\b(intern|internship|trainee|apprentice|fresher|freshers)\\b/.test(title)) return false;
+
+  return (
+    /\\bpower\\s*bi\\b/.test(title) ||
+    /\\bbusiness intelligence\\b/.test(title) ||
+    /\\b(data|business|bi|reporting|mis)\\s+(?:analyst|analytics analyst|intelligence analyst|developer|engineer|consultant|lead|manager|specialist)\\b/.test(title) ||
+    /\\b(?:reporting analyst|reporting developer|reporting lead|mis executive|mis analyst|mis manager)\\b/.test(title) ||
+    /\\bfabric\\b/.test(title) && /\\b(?:data|analytics|bi|developer|engineer|architect|consultant|lead|microsoft)\\b/.test(title) ||
+    /\\b(?:analytics|data)\\s+(?:team )?lead\\b/.test(title) ||
+    /\\b(?:power bi|business intelligence|data analytics|reporting)\\b.*\\b(?:team lead|lead|manager|head)\\b/.test(title)
+  );
+}
+
 const roleSignals=[
   ['power bi',18],
   ['business intelligence',18],
@@ -19,7 +38,7 @@ const roleSignals=[
 ];
 
 export function buildProfile(text,config){
-  const y=(text.match(/(\d{1,2})\+?\s*(?:years?|yrs?)/i)||[])[1];
+  const y=(text.match(/(\\d{1,2})\\+?\\s*(?:years?|yrs?)/i)||[])[1];
   return {
     text,
     tokens:tokens(text),
@@ -30,12 +49,13 @@ export function buildProfile(text,config){
 }
 
 export function scoreJob(job,p){
+  if(!isTargetRole(job)) return {score:0,matched:[],roleEligible:false};
   const h=norm([job.title,job.description,job.company,job.location].join(' '));
   const title=norm(job.title);
   let score=0,matched=[];
 
   for(const r of p.roles){
-    if(title.includes(r)||h.includes(r)){
+    if(title.includes(r)){
       score+=25;
       matched.push(r);
     }
@@ -60,6 +80,7 @@ export function scoreJob(job,p){
 
   return {
     score:Math.min(100,score),
-    matched:[...new Set(matched)]
+    matched:[...new Set(matched)],
+    roleEligible:true
   };
 }
