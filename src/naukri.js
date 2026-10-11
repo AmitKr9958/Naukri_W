@@ -103,9 +103,10 @@ async function recognizedJobCardCount(page) {
 }
 
 async function collectJobCardLocators(page) {
+  // Prefer one card per actual job URL. The class-based selector also matches
+  // nested Naukri wrappers (sometimes 150+ nodes for only 20 jobs), so using it
+  // first silently drops most listings after URL deduplication.
   const structured = await page.locator(JOB_CARD_SELECTOR).all();
-  if (structured.length) return structured;
-
   const links = await page.locator('a[href*="job-listings-"],a[href*="/job/"]').all();
   const cards = [];
   const seen = new Set();
@@ -132,7 +133,10 @@ async function collectJobCardLocators(page) {
     seen.add(href);
     cards.push(best);
   }
-  return cards;
+
+  // Keep the legacy selector only as a fallback for Naukri pages whose job URLs
+  // are rendered in a format not covered by the listing-link selectors above.
+  return cards.length ? cards : structured;
 }
 
 async function extractFreshCards(page, c) {
