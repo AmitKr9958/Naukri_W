@@ -1142,6 +1142,7 @@ export async function searchJobs(page, c) {
         freshCards: eligibleFresh.length,
         freshnessQualifiedCards: extracted.fresh.length,
         rejectedByFreshness: extracted.rejectedByFreshness,
+        extractionMs: extracted.extractionMs,
         rejectedByRemoteLocation,
         newestAgeHours: extracted.newestAgeHours,
         oldestAgeHours: extracted.oldestAgeHours,
