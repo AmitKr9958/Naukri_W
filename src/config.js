@@ -28,7 +28,8 @@ export const config={
   maxPagesPerSearch:positiveInt(process.env.MAX_PAGES_PER_SEARCH,1),
   pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,400),
   // Same browser, up to five tabs. Higher concurrency can trigger Naukri bot checks.
-  searchConcurrency:positiveInt(process.env.SEARCH_CONCURRENCY,5),
+  // Default to one tab; parallel Naukri searches can trigger CAPTCHA/security checks.
+  searchConcurrency:positiveInt(process.env.SEARCH_CONCURRENCY,1),
   searchBatchSize:positiveInt(process.env.JOB_SEARCH_BATCH_SIZE,3),
   telegramToken:process.env.TELEGRAM_BOT_TOKEN||'',
   telegramChatId:process.env.TELEGRAM_CHAT_ID||'',
