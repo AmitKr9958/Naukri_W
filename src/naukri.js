@@ -81,6 +81,20 @@ export function parseAgeHours(raw) {
   return null;
 }
 
+// Normalize only a standalone age label. Strip common UI prefixes/separators
+// but never accept a title/description such as "3 months contract" as posting age.
+export function normalizeAgeLabel(value) {
+  const label = String(value || '')
+    .replace(/\\u00a0/g, ' ')
+    .replace(/[•·|]+/g, ' ')
+    .replace(/\\s+/g, ' ')
+    .trim()
+    .replace(/^posted\\s*:?\\s*/i, '')
+    .trim();
+  if (!/^(?:just now|moments? ago|few\\s+(?:minutes?|hours?)(?:\\s+ago)?|\\d+(?:\\.\\d+)?\\+?\\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)(?:\\s+ago)?|yesterday|today)$/i.test(label)) return '';
+  return label;
+}
+
 async function textFromFirst(card, selectors) {
   for (const selector of selectors) {
     const loc = card.locator(selector).first();
@@ -142,16 +156,10 @@ async function nextPageUrl(page, currentUrl) {
 export function findPostedText(raw, preferred) {
   // Only trust a standalone posting-age label. Parsing arbitrary lines can
   // mistake titles such as "Data Analyst (3 months Contract)" for job age.
-  const isExplicitAgeLabel = value => {
-    const label = String(value || '').replace(/\s+/g, ' ').trim();
-    if (!/^(?:posted\s*:?\s*)?(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s+ago|yesterday|today)$/i.test(label)) {
-      return false;
-    }
-    return parseAgeHours(label) !== null || /\btoday\b/i.test(label);
-  };
-  const candidates = [preferred, ...String(raw || '').split(/\n+/).map(x => x.trim())].filter(Boolean);
+  const candidates = [preferred, ...String(raw || '').split(/\\n+/).map(x => x.trim())].filter(Boolean);
   for (const value of candidates) {
-    if (isExplicitAgeLabel(value)) return value;
+    const label = normalizeAgeLabel(value);
+    if (label && (parseAgeHours(label) !== null || /\\btoday\\b/i.test(label))) return label;
   }
   return '';
 }
@@ -208,7 +216,10 @@ async function collectJobCards(page) {
       '[class*="styles_tuple" i]','article:has(a[href*="job-listings-"])',
       'div:has(> a[href*="job-listings-"])','li:has(a[href*="job-listings-"])'
     ].join(',');
-    const ageLine = value => /^(?:posted\s*:?\s*)?(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s+ago|yesterday|today)$/i.test(String(value || '').trim());
+    const ageLine = value => {
+      const label = String(value || '').replace(/\\u00a0/g, ' ').replace(/[•·|]+/g, ' ').replace(/\\s+/g, ' ').trim().replace(/^posted\\s*:?\\s*/i, '').trim();
+      return /^(?:just now|moments? ago|few\\s+(?:minutes?|hours?)(?:\\s+ago)?|\\d+(?:\\.\\d+)?\\+?\\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)(?:\\s+ago)?|yesterday|today)$/i.test(label);
+    };
     const read = (card, href) => {
       if (!card || !href) return null;
       const raw = String(card.innerText || '').trim();
@@ -237,7 +248,7 @@ async function collectJobCards(page) {
       if (!href) continue;
       let candidate = link;
       let found = null;
-      for (let depth = 0; depth < 10 && candidate; depth++, candidate = candidate.parentElement) {
+      for (let depth = 0; depth < 16 && candidate; depth++, candidate = candidate.parentElement) {
         found = read(candidate, href);
         if (found) break;
       }
@@ -263,7 +274,13 @@ async function collectJobCards(page) {
       output.push(found);
     }
     return output.slice(0, 100);
-  }).catch(() => []);
+  }).catch(err => {
+    console.warn(JSON.stringify({
+      message: 'Browser-side job-card extraction failed',
+      error: String(err?.message || err).slice(0, 300)
+    }));
+    return [];
+  });
 }
 
 async function extractFreshCards(page, c) {
@@ -1122,7 +1139,18 @@ export async function searchJobs(page, c) {
         break;
       }
 
-      const extracted = await extractFreshCards(tab, c);
+      let extracted = await extractFreshCards(tab, c);
+      if (cards > 0 && extracted.uniqueCards === 0) {
+        console.warn(JSON.stringify({
+          search: q,
+          location: loc || 'ALL',
+          page: pageNo,
+          recognizedListingLinks: cards,
+          message: 'Listing links found but no cards extracted; waiting and retrying extraction once'
+        }));
+        await tab.waitForTimeout(Math.min(Math.max(c.pageDelayMs, 500), 900));
+        extracted = await extractFreshCards(tab, c);
+      }
       const isRemoteSearch = /^remote$/i.test(String(loc).trim());
       const eligibleFresh = isRemoteSearch
         ? extracted.fresh.filter(job => remoteJobMatchesPreferredLocation(job, c.locations))
@@ -1191,11 +1219,13 @@ export async function searchJobs(page, c) {
   // Worker pool: reuse tabs across tasks.
   let cursor = 0;
   let failedTasks = 0;
+  let verificationRequired = false;
   async function worker(workerId) {
     const tab = workerId === 0 ? page : await context.newPage();
     tab.setDefaultTimeout(c.actionTimeoutMs);
     try {
       while (true) {
+        if (verificationRequired) break;
         const idx = cursor++;
         if (idx >= tasks.length) break;
         const {q, loc} = tasks[idx];
@@ -1209,12 +1239,23 @@ export async function searchJobs(page, c) {
           }
         } catch (err) {
           failedTasks++;
-          console.warn(JSON.stringify({
-            search: q,
-            location: loc || 'ALL',
-            message: 'Search combo failed',
-            error: String(err?.message || err).slice(0, 400)
-          }));
+          const error = String(err?.message || err);
+          if (/CAPTCHA|security verification|verify you are human/i.test(error)) {
+            verificationRequired = true;
+            console.warn(JSON.stringify({
+              search: q,
+              location: loc || 'ALL',
+              message: 'Human verification required; stopping queued searches for this cycle',
+              error: error.slice(0, 400)
+            }));
+          } else {
+            console.warn(JSON.stringify({
+              search: q,
+              location: loc || 'ALL',
+              message: 'Search combo failed',
+              error: error.slice(0, 400)
+            }));
+          }
         }
       }
     } finally {
@@ -1223,6 +1264,9 @@ export async function searchJobs(page, c) {
   }
 
   await Promise.all(Array.from({length: Math.min(concurrency, tasks.length)}, (_, i) => worker(i)));
+  if (verificationRequired) {
+    throw new Error('Naukri requires manual CAPTCHA/security verification. Remaining queued searches were stopped; run npm run login, complete verification manually, then retry.');
+  }
   if (tasks.length > 0 && failedTasks === tasks.length) {
     throw new Error(`All ${tasks.length} Naukri search combinations failed. Review the preceding search diagnostics; no jobs were returned.`);
   }
