@@ -63,7 +63,7 @@ test('logs a useful diagnostic and falls back safely when AI content is empty',a
     assert.equal(result.aiReason,'AI unavailable; rule-based score retained.');
     assert.equal(warnings.length,1);
     assert.match(warnings[0],/ai-scoring-failed/);
-    assert.match(warnings[0],/AI response had empty message content/);
+    assert.match(warnings[0],/AI response had empty assistant content/);
     assert.doesNotMatch(warnings[0],/test-key-not-real/);
   }finally{globalThis.fetch=originalFetch;console.warn=originalWarn;}
 });
@@ -95,6 +95,29 @@ test('reports safe response-shape diagnostics when endpoint returns no choices',
     assert.match(warnings[0],/providerError=model temporarily unavailable/);
     assert.doesNotMatch(warnings[0],/test-key-not-real/);
   }finally{globalThis.fetch=originalFetch;console.warn=originalWarn;}
+});
+
+
+test('retries once without JSON mode when the provider returns reasoning-only content',async()=>{
+  const originalFetch=globalThis.fetch;
+  const requests=[];
+  const answer={relevant:true,fit:88,roleFit:90,reason:'Strong Power BI and SQL match.',missing:[]};
+  globalThis.fetch=async(url,options)=>{
+    const body=JSON.parse(options.body);
+    requests.push(body);
+    if(requests.length===1)return mockResponse({choices:[{message:{role:'assistant',content:'',reasoning:'I should evaluate the candidate carefully.'}}]});
+    return mockResponse({choices:[{message:{role:'assistant',content:JSON.stringify(answer)}}]});
+  };
+  try{
+    const [result]=await analyzeJobs(baseConfig,[job],resume);
+    assert.equal(result.relevant,true);
+    assert.equal(result.aiFit,88);
+    assert.equal(result.roleFit,90);
+    assert.equal(requests.length,2);
+    assert.deepEqual(requests[0].response_format,{type:'json_object'});
+    assert.equal('response_format' in requests[1],false);
+    assert.match(requests[1].messages.at(-1).content,/Return exactly one compact JSON object/);
+  }finally{globalThis.fetch=originalFetch;}
 });
 
 test('does not call AI when consent is disabled',async()=>{
