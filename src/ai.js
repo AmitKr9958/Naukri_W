@@ -4,8 +4,12 @@ const redact=s=>String(s||'')
   .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[EMAIL REDACTED]')
   .replace(/(?:\+?91[-\s]?)?[6-9]\d{9}/g,'[PHONE REDACTED]')
   .replace(/\b(?:aadhaar|aadhar|pan|passport|account|bank)\s*(?:no|number|#)?\s*[:\-]?\s*[A-Z0-9-]{4,}\b/gi,'[ID REDACTED]')
+  .replace(/\b[A-Z]{5}\d{4}[A-Z]\b/gi,'[ID REDACTED]')
+  .replace(/\b\d{4}\s?\d{4}\s?\d{4}\b/g,'[ID REDACTED]')
   .replace(/\b(?:salary|ctc|compensation|expected package)\b[^.\n]{0,100}/gi,'[SALARY REDACTED]')
-  .replace(/\b(?:address|residential address|home address)\b[^.\n]{0,150}/gi,'[ADDRESS REDACTED]');
+  .replace(/\b(?:address|residential address|home address)\b[^.\n]{0,150}/gi,'[ADDRESS REDACTED]')
+  .replace(/\b\d{1,5}\s+(?:[A-Za-z0-9.'-]+\s+){0,5}(?:road|rd|street|st|lane|marg|nagar|colony|sector|block|phase|extension|extn|apartment|flat|floor|house|plot|society|residency)\b[^.\n]{0,100}/gi,'[ADDRESS REDACTED]')
+  .replace(/\b[1-9]\d{5}\b/g,'[POSTAL CODE REDACTED]');
 
 const clip=s=>String(s||'').slice(0,12000);
 export function redactForAI(text){return clip(redact(text));}
