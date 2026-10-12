@@ -91,7 +91,7 @@ export function normalizeAgeLabel(value) {
     .trim()
     .replace(/^posted\s*:?\s*/i, '')
     .trim();
-  if (!/^(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)(?:\s+ago)?|yesterday|today)$/i.test(label)) return '';
+  if (!/^(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s+ago|yesterday|today)$/i.test(label)) return '';
   return label;
 }
 
@@ -218,7 +218,7 @@ async function collectJobCards(page) {
     ].join(',');
     const ageLine = value => {
       const label = String(value || '').replace(/\u00a0/g, ' ').replace(/[•·|]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^posted\s*:?\s*/i, '').trim();
-      return /^(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)(?:\s+ago)?|yesterday|today)$/i.test(label);
+      return /^(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s+ago|yesterday|today)$/i.test(label);
     };
     const read = (card, href) => {
       if (!card || !href) return null;
