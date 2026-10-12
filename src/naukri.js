@@ -94,7 +94,6 @@ export function normalizeAgeLabel(value) {
   if (!/^(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)(?:\s+ago)?|yesterday|today)$/i.test(label)) return '';
   return label;
 }
-}
 
 async function textFromFirst(card, selectors) {
   for (const selector of selectors) {
@@ -163,7 +162,6 @@ export function findPostedText(raw, preferred) {
     if (label && (parseAgeHours(label) !== null || /\btoday\b/i.test(label))) return label;
   }
   return '';
-}
 }
 
 // Remote jobs are only eligible when the listing itself mentions one of the configured target cities.
