@@ -10,7 +10,7 @@ test('rotates query batches across successive cycles without losing coverage',()
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canonicalJobUrl,findPostedText,nextSearchPageUrl,parseAgeHours,remoteJobMatchesPreferredLocation,selectSearchBatch} from '../src/naukri.js';
+import {canonicalJobUrl,findPostedText,normalizeAgeLabel,nextSearchPageUrl,parseAgeHours,remoteJobMatchesPreferredLocation,selectSearchBatch} from '../src/naukri.js';
 
 test('finds Naukri Next page and avoids loops',()=>{
   const current='https://www.naukri.com/power-bi-developer-jobs-in-gurgaon';
@@ -25,9 +25,17 @@ test('finds Naukri Next page and avoids loops',()=>{
 test('posting-age extraction ignores contract durations in job titles',()=>{
   assert.equal(findPostedText('Data Analyst (3 months Contract) | Remote'), '');
   assert.equal(findPostedText('Power BI Developer\n3+ weeks ago'), '3+ weeks ago');
-  assert.equal(findPostedText('Data Analyst (3 months Contract)\nPosted: 4 hours ago'), 'Posted: 4 hours ago');
-  assert.equal(findPostedText('Power BI Developer\nPosted today'), 'Posted today');
+  assert.equal(findPostedText('Data Analyst (3 months Contract)\nPosted: 4 hours ago'), '4 hours ago');
+  assert.equal(findPostedText('Power BI Developer\nPosted today'), 'today');
   assert.equal(findPostedText('Data Analyst (3 months Contract)', 'Data Analyst (3 months Contract)'), '');
+});
+
+test('normalizes standalone posting-age labels without accepting contract durations',()=>{
+  assert.equal(normalizeAgeLabel('Posted: 4 hours ago'), '4 hours ago');
+  assert.equal(normalizeAgeLabel('  3+ weeks ago · '), '3+ weeks ago');
+  assert.equal(normalizeAgeLabel('Posted today'), 'today');
+  assert.equal(normalizeAgeLabel('Data Analyst (3 months Contract)'), '');
+  assert.equal(normalizeAgeLabel('3 months contract'), '');
 });
 
 test('keeps strict freshness parsing',()=>{
