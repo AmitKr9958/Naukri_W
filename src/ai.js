@@ -32,13 +32,22 @@ function messageText(message){
     const text=message.content.filter(part=>typeof part?.text==='string').map(part=>part.text).join('\n');
     if(text.trim())return text;
   }
-  // Some reasoning models place the answer in a separate field when content is empty.
-  if(typeof message?.reasoning==='string'&&message.reasoning.trim())return message.reasoning;
-  if(Array.isArray(message?.reasoning_details)){
-    const text=message.reasoning_details.filter(part=>typeof part?.text==='string').map(part=>part.text).join('\n');
-    if(text.trim())return text;
+  // Never parse reasoning/chain-of-thought as the final answer.
+  throw new Error('AI response had empty assistant content');
+}
+
+function parseCompletion(data){
+  const choice=data?.choices?.[0];
+  let message=choice?.message;
+  if(!message&&typeof choice?.text==='string')message={content:choice.text};
+  if(!message&&typeof data?.output_text==='string')message={content:data.output_text};
+  if(!message){
+    const providerError=String(data?.error?.message||data?.message||data?.detail||'').replace(/Bearer\\s+\\S+/gi,'Bearer [REDACTED]').slice(0,180);
+    const keys=data&&typeof data==='object'?Object.keys(data).slice(0,12).join(','):'non-object';
+    const choiceKeys=choice&&typeof choice==='object'?Object.keys(choice).slice(0,12).join(','):'none';
+    throw new Error('AI response has no usable assistant message (topLevelKeys='+keys+'; choiceKeys='+choiceKeys+(providerError?'; providerError='+providerError:'')+')');
   }
-  throw new Error('AI response had empty message content');
+  return parseJson(messageText(message));
 }
 
 async function analyzeOne(c,job,resume){
@@ -51,11 +60,11 @@ async function analyzeOne(c,job,resume){
     })}
   ],temperature:0.1,max_tokens:1200,stream:false,response_format:{type:'json_object'}};
 
-  const data=await withRetry(async()=>{
+  const requestCompletion=requestBody=>withRetry(async()=>{
     const r=await fetch(c.aiBaseUrl.replace(/\/$/,'')+'/chat/completions',{
       method:'POST',
       headers:{Authorization:'Bearer '+c.aiApiKey,'Content-Type':'application/json'},
-      body:JSON.stringify(body),
+      body:JSON.stringify(requestBody),
       signal:AbortSignal.timeout(c.httpTimeoutMs)
     });
     const responseText=await r.text();
@@ -71,17 +80,21 @@ async function analyzeOne(c,job,resume){
     return response;
   },{retries:1,delayMs:c.retryDelayMs});
 
-  const choice=data?.choices?.[0];
-  let message=choice?.message;
-  if(!message&&typeof choice?.text==='string')message={content:choice.text};
-  if(!message&&typeof data?.output_text==='string')message={content:data.output_text};
-  if(!message){
-    const providerError=String(data?.error?.message||data?.message||data?.detail||'').replace(/Bearer\\s+\\S+/gi,'Bearer [REDACTED]').slice(0,180);
-    const keys=data&&typeof data==='object'?Object.keys(data).slice(0,12).join(','):'non-object';
-    const choiceKeys=choice&&typeof choice==='object'?Object.keys(choice).slice(0,12).join(','):'none';
-    throw new Error('AI response has no usable assistant message (topLevelKeys='+keys+'; choiceKeys='+choiceKeys+(providerError?'; providerError='+providerError:'')+')');
+  let parsed;
+  try{
+    parsed=parseCompletion(await requestCompletion(body));
+  }catch(firstError){
+    const reason=String(firstError?.message||firstError);
+    // Some free-router providers ignore JSON mode or return reasoning without
+    // a final answer. Retry once without response_format and request compact JSON.
+    if(!/empty assistant content|no JSON object|invalid JSON|no usable assistant message/i.test(reason))throw firstError;
+    const retryBody={...body,max_tokens:1800,messages:[
+      ...body.messages,
+      {role:'system',content:'The previous response did not contain a usable final answer. Return exactly one compact JSON object with keys relevant (boolean), fit (0-100), roleFit (0-100), reason (short sentence), missing (array). Do not output analysis, reasoning, markdown, or any text outside the JSON object.'}
+    ]};
+    delete retryBody.response_format;
+    parsed=parseCompletion(await requestCompletion(retryBody));
   }
-  const parsed=parseJson(messageText(message));
   if(typeof parsed.relevant!=='boolean')throw new Error('AI relevant must be boolean');
   const aiFit=Number(parsed.fit);
   const roleFit=Number(parsed.roleFit);
