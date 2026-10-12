@@ -330,12 +330,11 @@ async function launchContext(c) {
     timezoneId: 'Asia/Kolkata',
     userAgent:
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    // Do not hide automation or bypass site protections; keep only stability flags.
     args: [
-      '--disable-blink-features=AutomationControlled',
       '--no-sandbox',
       '--disable-dev-shm-usage'
-    ],
-    ignoreDefaultArgs: ['--enable-automation']
+    ]
   };
 
   const isProfileLockError = err => {
@@ -1127,9 +1126,8 @@ export async function searchJobs(page, c) {
         break;
       }
 
-      const pageCap = sortedByDate
-        ? Math.min(c.maxPagesPerSearch, 2)
-        : Math.max(Math.min(c.maxPagesPerSearch, 2), 2);
+      // Respect the configured page cap for both date-sorted and ordinary searches.
+      const pageCap = Math.min(c.maxPagesPerSearch, 2);
       const next = pageNo < pageCap ? await nextPageUrl(tab, url) : null;
       if (!next) break;
       await tab.goto(next, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
@@ -1141,6 +1139,7 @@ export async function searchJobs(page, c) {
 
   // Worker pool: reuse tabs across tasks.
   let cursor = 0;
+  let failedTasks = 0;
   async function worker(workerId) {
     const tab = workerId === 0 ? page : await context.newPage();
     tab.setDefaultTimeout(c.actionTimeoutMs);
@@ -1158,6 +1157,7 @@ export async function searchJobs(page, c) {
             }
           }
         } catch (err) {
+          failedTasks++;
           console.warn(JSON.stringify({
             search: q,
             location: loc || 'ALL',
@@ -1172,6 +1172,9 @@ export async function searchJobs(page, c) {
   }
 
   await Promise.all(Array.from({length: Math.min(concurrency, tasks.length)}, (_, i) => worker(i)));
+  if (tasks.length > 0 && failedTasks === tasks.length) {
+    throw new Error(`All ${tasks.length} Naukri search combinations failed. Review the preceding search diagnostics; no jobs were returned.`);
+  }
   return out;
 }
 
