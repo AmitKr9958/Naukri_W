@@ -46,7 +46,8 @@ For the complete first test in one step, use `scripts/test-once.ps1` instead. It
 - `MAX_JOBS_PER_RUN`: maximum alerts in a cycle.
 - `AI_CANDIDATE_LIMIT`: maximum candidates evaluated by AI per cycle.
 - `MAX_PAGES_PER_SEARCH`: 1 or 2 pages per query/location.
-- `SEARCH_CONCURRENCY`: 1–5 browser tabs; lower it if Naukri starts blocking requests.
+- `SEARCH_CONCURRENCY`: browser tabs; default 1 to reduce CAPTCHA/security-check risk. Keep it at 1 unless you have verified that higher concurrency is safe for your account.
+- `PAGE_DELAY_MS`: delay between page/search actions; use at least 1000ms for conservative pacing (default example: 1200ms).
 - `JOB_SEARCH_BATCH_SIZE`: number of query categories to search each cycle; default 3. With six queries, the two batches alternate on consecutive cycles. Rotation is in-memory only (no cursor file is written), so a restarted watcher begins with the first batch again.
 - Speed optimization: when one page per search is configured, the watcher skips redundant Freshness/Sort UI clicks because the direct URL already requests last-day results. The strict `JOB_MAX_AGE_HOURS` check remains enforced on extracted listings.
 
