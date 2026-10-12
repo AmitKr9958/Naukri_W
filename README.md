@@ -31,9 +31,9 @@ After pulling the latest `main` branch, run the following from PowerShell in the
 .\scripts\validate-ready.ps1
 ```
 
-The validation script checks the Node.js version, installs dependencies, syntax-checks every project JavaScript file, runs all automated tests, verifies local configuration and resume extraction, and runs an AI smoke test with synthetic data only when AI is enabled and consented.
+The validation script checks the Node.js version, installs dependencies, syntax-checks every project JavaScript file, runs all automated tests, verifies local configuration and resume extraction, and runs an AI smoke test with synthetic data only when AI is enabled and consented. It does **not** open Naukri, search jobs, change `DRY_RUN`, or send Telegram messages.
 
-It does **not** open Naukri, search jobs, change `DRY_RUN`, or send Telegram messages. A successful result means the local code/configuration checks passed; it does not prove Naukri will permit live browsing or that a Telegram bot is configured correctly.
+For the complete first test in one step, use `scripts/test-once.ps1` instead. It runs all of the above, then starts exactly one Naukri dry-run cycle. It refuses to start unless `DRY_RUN=true`; it does not send Telegram messages or change seen-job state. It may take several minutes and requires a valid saved Naukri browser session. If Naukri blocks access or requests verification, stop and complete the challenge manually.
 
 ## Watcher settings
 
@@ -58,6 +58,7 @@ After the first manual dry-run is reviewed and Telegram delivery is verified sep
 - `npm test` — automated regression tests.
 - `npm run lint` — syntax-check all JavaScript under `src`, `scripts`, `test`, and `tests`.
 - `npm run preflight` — validate local configuration and load the resume without starting a browser.
+- `scripts/test-once.ps1` — complete validation plus one guarded end-to-end Naukri dry-run.
 - `npm run ai-smoke-test` — test the configured AI endpoint with synthetic data only.
 - `npm run telegram-test` — check Telegram configuration/delivery; this is separate from the dry-run validation.
 - `npm run ai-9router-test` — checks the local 9Router service; it requires that service to be running locally.
