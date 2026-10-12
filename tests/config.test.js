@@ -1,3 +1,12 @@
+test('rejects invalid rotating search batch sizes',()=>{
+  setValidConfig();
+  config.searchBatchSize=0;
+  assert.throws(()=>validateConfig(),/JOB_SEARCH_BATCH_SIZE/);
+  setValidConfig();
+  config.searchBatchSize=21;
+  assert.throws(()=>validateConfig(),/JOB_SEARCH_BATCH_SIZE/);
+});
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {config,validateConfig} from '../src/config.js';
@@ -15,6 +24,7 @@ function setValidConfig(){
     runEveryMinutes:30,
     maxPagesPerSearch:1,
     searchConcurrency:5,
+    searchBatchSize:3,
     pageDelayMs:400,
     aiEnabled:false,
     aiConsent:false,
