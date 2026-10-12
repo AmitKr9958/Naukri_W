@@ -13,6 +13,9 @@ test('finds Naukri Next page and avoids loops',()=>{
 
 test('keeps strict freshness parsing',()=>{
   assert.equal(parseAgeHours('30 minutes ago'),0.5);
+  assert.equal(parseAgeHours('just now'),0);
+  assert.equal(parseAgeHours('Posted today'),null);
+  assert.equal(parseAgeHours('today'),null);
   assert.equal(parseAgeHours('6 hours ago'),6);
   assert.equal(parseAgeHours('1 day ago'),24);
   assert.equal(parseAgeHours('3+ weeks ago'),504);
