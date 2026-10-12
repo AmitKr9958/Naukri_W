@@ -2,6 +2,7 @@ import 'dotenv/config'; import path from 'node:path';
 const csv=v=>(v||'').split(',').map(s=>s.trim()).filter(Boolean);
 const bool=(v,d=false)=>v==null?d:['1','true','yes','on'].includes(String(v).toLowerCase());
 const localAI=url=>/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(?:\/|$)/i.test(url||'');
+const validHttpUrl=value=>{try{const u=new URL(value);return (u.protocol==='https:'||u.protocol==='http:')&&Boolean(u.hostname);}catch{return false;}};
 const positiveInt=(v,d)=>{const n=Number(v);return Number.isInteger(n)&&n>0?n:d;};
 export const config={
   tz:process.env.TZ||'Asia/Kolkata',
@@ -45,15 +46,18 @@ export function validateConfig(){
   for(const[k,v]of [['RESUME_PATH',config.resumePath],['TELEGRAM_BOT_TOKEN',config.telegramToken],['TELEGRAM_CHAT_ID',config.telegramChatId]])if(!v&&!config.dryRun)m.push(k);
   if(!config.roles.length)m.push('JOB_ROLES');
   if(!config.locations.length)m.push('JOB_LOCATIONS');
-  if(config.maxAgeHours<=0)m.push('JOB_MAX_AGE_HOURS (> 0)');
-  if(config.minMatchScore<0||config.minMatchScore>100)m.push('MIN_MATCH_SCORE (0-100)');
-  if(config.maxPagesPerSearch<1)m.push('MAX_PAGES_PER_SEARCH (>= 1)');
-  if(config.pageDelayMs<0)m.push('PAGE_DELAY_MS (>= 0)');
+  if(!validHttpUrl(config.naukriUrl))m.push('NAUKRI_URL (must be a valid HTTP(S) URL)');
+  if(!Number.isFinite(config.maxAgeHours)||config.maxAgeHours<=0)m.push('JOB_MAX_AGE_HOURS (finite number > 0)');
+  if(!Number.isFinite(config.minMatchScore)||config.minMatchScore<0||config.minMatchScore>100)m.push('MIN_MATCH_SCORE (0-100)');
+  if(!Number.isInteger(config.runEveryMinutes)||config.runEveryMinutes<10)m.push('RUN_EVERY_MINUTES (integer >= 10)');
+  if(!Number.isInteger(config.maxPagesPerSearch)||config.maxPagesPerSearch<1||config.maxPagesPerSearch>2)m.push('MAX_PAGES_PER_SEARCH (1-2)');
+  if(!Number.isInteger(config.searchConcurrency)||config.searchConcurrency<1||config.searchConcurrency>5)m.push('SEARCH_CONCURRENCY (1-5)');
+  if(!Number.isFinite(config.pageDelayMs)||config.pageDelayMs<0)m.push('PAGE_DELAY_MS (>= 0)');
   if(config.aiCandidateLimit<config.maxJobsPerRun)console.warn('AI_CANDIDATE_LIMIT is below MAX_JOBS_PER_RUN; increase it to preserve broad AI ranking.');
   if(config.aiEnabled&&!config.aiConsent)console.warn('AI is enabled but AI_CONSENT=false; AI analysis will be skipped.');
-  if(config.aiEnabled&&!localAI(config.aiBaseUrl)&&!config.aiApiKey)m.push('AI_API_KEY (required for non-local AI endpoint)');
+  if(config.aiEnabled&&config.aiConsent&&!validHttpUrl(config.aiBaseUrl))m.push('AI_BASE_URL (must be a valid HTTP(S) URL)');
+  if(config.aiEnabled&&config.aiConsent&&!localAI(config.aiBaseUrl)&&!config.aiApiKey)m.push('AI_API_KEY (required for non-local AI endpoint)');
   if(config.autoLogin&&!config.naukriUsername)m.push('NAUKRI_USERNAME (required when NAUKRI_AUTO_LOGIN=true)');
   if(config.autoLogin&&!config.naukriPassword)m.push('NAUKRI_PASSWORD (required when NAUKRI_AUTO_LOGIN=true)');
   if(m.length)throw new Error('Missing or invalid configuration: '+m.join(', '));
-  if(!Number.isInteger(config.runEveryMinutes)||config.runEveryMinutes<10)throw new Error('RUN_EVERY_MINUTES must be an integer >= 10.');
 }
