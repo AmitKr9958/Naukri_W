@@ -17,6 +17,7 @@ export const config={
   naukriUsername:process.env.NAUKRI_USERNAME||'',
   naukriPassword:process.env.NAUKRI_PASSWORD||'',
   maxAgeHours:Number(process.env.JOB_MAX_AGE_HOURS||6),
+  minExperienceYears:Number(process.env.JOB_MIN_EXPERIENCE_YEARS||5),
   locations:csv(process.env.JOB_LOCATIONS),
   roles:csv(process.env.JOB_ROLES),
   searchQueries:csv(process.env.JOB_SEARCH_QUERIES).length ? csv(process.env.JOB_SEARCH_QUERIES) : ['Power BI','Data Analyst','Business Intelligence','Reporting Analyst','Fabric Analytics Engineer','Microsoft Fabric'],
@@ -48,6 +49,7 @@ export function validateConfig(){
   if(!config.locations.length)m.push('JOB_LOCATIONS');
   if(!validHttpUrl(config.naukriUrl))m.push('NAUKRI_URL (must be a valid HTTP(S) URL)');
   if(!Number.isFinite(config.maxAgeHours)||config.maxAgeHours<=0)m.push('JOB_MAX_AGE_HOURS (finite number > 0)');
+  if(!Number.isInteger(config.minExperienceYears)||config.minExperienceYears<0||config.minExperienceYears>40)m.push('JOB_MIN_EXPERIENCE_YEARS (integer 0-40)');
   if(!Number.isFinite(config.minMatchScore)||config.minMatchScore<0||config.minMatchScore>100)m.push('MIN_MATCH_SCORE (0-100)');
   if(!Number.isInteger(config.runEveryMinutes)||config.runEveryMinutes<10)m.push('RUN_EVERY_MINUTES (integer >= 10)');
   if(!Number.isInteger(config.maxPagesPerSearch)||config.maxPagesPerSearch<1||config.maxPagesPerSearch>2)m.push('MAX_PAGES_PER_SEARCH (1-2)');
