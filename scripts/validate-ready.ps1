@@ -14,7 +14,7 @@ function Invoke-NpmCheck([string]$Label, [string[]]$Arguments) {
 $nodeVersion = (& node -p "process.versions.node").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Node.js is not available on PATH." }
 $nodeMajor = [int]($nodeVersion.Split('.')[0])
-if ($nodeMajor -lt 20) { throw "Node.js 20 or newer is required. Found $nodeVersion." }
+if ($nodeMajor -lt 22) { throw "Node.js 22 or newer is required. Found $nodeVersion." }
 
 if (-not (Test-Path -LiteralPath (Join-Path $root ".env"))) {
   throw "Local .env file is missing. Create it from .env.example and configure RESUME_PATH before running this validation."
