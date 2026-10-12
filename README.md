@@ -47,7 +47,7 @@ For the complete first test in one step, use `scripts/test-once.ps1` instead. It
 - `AI_CANDIDATE_LIMIT`: maximum candidates evaluated by AI per cycle.
 - `MAX_PAGES_PER_SEARCH`: 1 or 2 pages per query/location.
 - `SEARCH_CONCURRENCY`: 1–5 browser tabs; lower it if Naukri starts blocking requests.
-- `JOB_SEARCH_BATCH_SIZE`: number of query categories to search each cycle; default 3. With six queries and a 30-minute schedule, all categories are searched across each hour. Rotation uses the scheduler interval and does not write a cursor file.
+- `JOB_SEARCH_BATCH_SIZE`: number of query categories to search each cycle; default 3. With six queries, the two batches alternate on consecutive cycles. Rotation is in-memory only (no cursor file is written), so a restarted watcher begins with the first batch again.
 - Speed optimization: when one page per search is configured, the watcher skips redundant Freshness/Sort UI clicks because the direct URL already requests last-day results. The strict `JOB_MAX_AGE_HOURS` check remains enforced on extracted listings.
 
 The watcher reports candidate titles before role filtering, scoring results, AI failures, and search diagnostics. If every search combination fails, the run now reports a failure instead of silently presenting an empty result as a successful search.
