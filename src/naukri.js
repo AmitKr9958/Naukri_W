@@ -199,7 +199,7 @@ async function collectJobCards(page) {
       '[class*="styles_tuple" i]','article:has(a[href*="job-listings-"])',
       'div:has(> a[href*="job-listings-"])','li:has(a[href*="job-listings-"])'
     ].join(',');
-    const ageLine = value => /\b(?:just now|moments? ago|\d+(?:\.\d+)?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s*(?:ago)?|yesterday)\b/i.test(value || '');
+    const ageLine = value => /\b(?:just now|moments? ago|few\s+(?:minutes?|hours?)|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s*(?:ago)?|yesterday)\b/i.test(value || '');
     const read = (card, href) => {
       if (!card || !href) return null;
       const raw = String(card.innerText || '').trim();
