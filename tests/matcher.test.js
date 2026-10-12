@@ -59,14 +59,23 @@ test('accepts expanded analytics, Power Platform, and Fabric role titles',()=>{
   }
 });
 
-test('rejects unrelated and entry-level job titles',()=>{
+test('rejects unrelated engineering roles and entry-level experience ranges',()=>{
   for(const title of [
     'Digital Marketing Executive',
     'Customer Support Engineer',
     'Java Developer',
     'Power BI Developer Intern',
-    'Data Analyst Trainee'
+    'Data Analyst Trainee',
+    'Big Data Engineer',
+    'Data Engineer',
+    'Java Full Stack Developer',
+    'Network Engineer',
+    'ETL Tester'
   ]){
     assert.equal(isTargetRole({title}),false,title);
   }
+  assert.equal(isTargetRole({title:'Data Analyst',url:'https://www.naukri.com/job-listings-data-analyst-0-to-2-years-123'}),false);
+  assert.equal(isTargetRole({title:'Power BI Developer',url:'https://www.naukri.com/job-listings-power-bi-developer-0-to-2-years-123'}),false);
+  assert.equal(isTargetRole({title:'Data Analyst',url:'https://www.naukri.com/job-listings-data-analyst-5-to-10-years-123'}),true);
+  assert.equal(isTargetRole({title:'Microsoft Fabric Data Engineer'}),true);
 });
