@@ -1,44 +1,65 @@
 # Naukri Job Watcher
 
-Production-oriented Playwright worker that runs on a configurable cadence while the Windows machine is on and connected, uses a persistent Naukri browser profile, discovers jobs posted in the last 6 hours, scores them against the local resume/profile, optionally uses AI as a second-stage evaluator, and sends the best matches to Telegram.
+A Windows-friendly Playwright job watcher for recent Naukri listings. It matches Power BI, BI, analytics, reporting, MIS, Power Platform, and Microsoft Fabric roles against a local resume; optionally evaluates the best candidates with an OpenAI-compatible AI endpoint; and sends qualified job links to Telegram.
 
-## Important
-- Does not auto-apply to jobs.
-- Does not bypass CAPTCHA, MFA, bot checks, or access controls.
-- Prefer the persistent authenticated browser session after the first successful login.
-- Optional automatic credential login is supported as a fallback when the session expires.
-- Keep .env and .naukri-profile out of Git.
-- The local machine must be on and connected to the internet for the worker to run.
-- Frequent automated browsing can trigger site rate limits or bot protections. The watcher does not bypass those protections.
+## Safety and operating limits
 
-## Windows
-1. Create or clone to E:\naukri_W.
-2. Install Node.js 20+.
-3. Run npm install.
-4. Run npx playwright install chromium.
-5. Copy .env.example to .env and configure Telegram plus resume path.
-6. For the safest setup, run npm run login once and complete Naukri login interactively; the persistent session is then reused by the worker.
-7. Optional automatic login fallback: set NAUKRI_AUTO_LOGIN=true, NAUKRI_USERNAME and NAUKRI_PASSWORD in the local .env. Never commit these values.
-8. If Naukri requests OTP, CAPTCHA, security verification, or another interactive challenge, automatic login stops and npm run login must be used to complete it.
-9. Test with DRY_RUN=true.
-10. For production, set DRY_RUN=false and NAUKRI_HEADLESS=true, configure Telegram, and enable AI only after consent is recorded.
-11. Run scripts/install-background.ps1 from an elevated PowerShell session.
+- The watcher never submits job applications.
+- It does not bypass CAPTCHA, MFA, bot checks, or site access controls. It uses the browser's default identity and security sandbox.
+- If Naukri blocks a request or asks for verification, stop and complete verification manually. Do not try to defeat the challenge.
+- Keep `.env`, `.naukri-profile/`, `state.json`, logs, and credentials out of Git.
+- AI is opt-in. Review the privacy note and set `AI_CONSENT=true` before enabling it.
+- Before AI analysis, the watcher redacts common email, phone, government-ID, salary/CTC, address, and postal-code patterns. Automated redaction is not perfect; review the resume and provider privacy terms before opting in.
+- The machine and internet must stay available for the Windows Task Scheduler watcher to run. It is not a cloud-hosted 24/7 service.
 
-## Matching
-Jobs older than 6 hours are rejected. Scoring uses role, skills, location and recency. Duplicate jobs are suppressed. When AI is enabled, up to AI_CANDIDATE_LIMIT fresh unseen candidates (default 30) are evaluated, then only the top MAX_JOBS_PER_RUN matches (default 15) are sent to Telegram.
+## Windows setup
 
-## Scheduling
-RUN_EVERY_MINUTES controls the interval; the production example uses 30 minutes. Windows Task Scheduler starts the worker at logon and restarts it after process failures. 24/7 operation requires the Windows PC and internet connection to remain available.
+1. Install a currently supported Node.js version (22 or 24).
+2. Run `npm install`.
+3. Copy `.env.example` to `.env`.
+4. Set `RESUME_PATH` to your local PDF, DOCX, or TXT resume. Configure your preferred locations and roles.
+5. For AI, configure `AI_BASE_URL`, `AI_MODEL`, and `AI_API_KEY` as appropriate. Never put API keys in Git or share them in logs.
+6. Run `npm run login` once and complete Naukri login interactively. The persistent profile is reused by the watcher.
+7. Configure Telegram bot token and chat ID if you plan to use alerts.
+8. Keep `DRY_RUN=true` during initial validation. Dry-run mode never sends Telegram messages or changes seen-job state.
 
-## Telegram
-Create a bot with BotFather, send /start to the bot, set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID, then test delivery before enabling normal delivery.
+## One-command local validation
 
-## AI matching and privacy
-The AI is an optional second-stage evaluator using an OpenAI-compatible endpoint. Local 9Router is supported. Before AI analysis, resume and job text is redacted for email, phone, obvious IDs, salary/CTC, and address fields. AI consent is required. AI failure falls back to the deterministic score and does not stop the watcher.
+After pulling the latest `main` branch, run the following from PowerShell in the project directory:
 
-## Validation
-Run npm test
-Run npm run lint
-Run npm run ai-9router-test
+```powershell
+.\scripts\validate-ready.ps1
+```
 
-Do not use npm audit fix --force; review dependency updates separately.
+The validation script checks the Node.js version, installs dependencies, syntax-checks every project JavaScript file, runs all automated tests, verifies local configuration and resume extraction, and runs an AI smoke test with synthetic data only when AI is enabled and consented.
+
+It does **not** open Naukri, search jobs, change `DRY_RUN`, or send Telegram messages. A successful result means the local code/configuration checks passed; it does not prove Naukri will permit live browsing or that a Telegram bot is configured correctly.
+
+## Watcher settings
+
+- `RUN_EVERY_MINUTES`: schedule interval; minimum 10 minutes.
+- `JOB_MAX_AGE_HOURS`: maximum age for a job posting; default 6.
+- `JOB_LOCATIONS`: preferred cities.
+- `JOB_ROLES` and `JOB_SEARCH_QUERIES`: roles to search and accept.
+- `MIN_MATCH_SCORE`: minimum final score for an alert.
+- `MAX_JOBS_PER_RUN`: maximum alerts in a cycle.
+- `AI_CANDIDATE_LIMIT`: maximum candidates evaluated by AI per cycle.
+- `MAX_PAGES_PER_SEARCH`: 1 or 2 pages per query/location.
+- `SEARCH_CONCURRENCY`: 1–5 browser tabs; lower it if Naukri starts blocking requests.
+
+The watcher reports candidate titles before role filtering, scoring results, AI failures, and search diagnostics. If every search combination fails, the run now reports a failure instead of silently presenting an empty result as a successful search.
+
+## Background operation
+
+After the first manual dry-run is reviewed and Telegram delivery is verified separately, `scripts/install-background.ps1` can install a Windows Scheduled Task that starts at logon. The computer must remain powered on and connected to the internet. Do not run the production-enabling script until the dry-run, Naukri session, AI (if enabled), and Telegram checks are satisfactory.
+
+## Useful commands
+
+- `npm test` — automated regression tests.
+- `npm run lint` — syntax-check all JavaScript under `src`, `scripts`, `test`, and `tests`.
+- `npm run preflight` — validate local configuration and load the resume without starting a browser.
+- `npm run ai-smoke-test` — test the configured AI endpoint with synthetic data only.
+- `npm run telegram-test` — check Telegram configuration/delivery; this is separate from the dry-run validation.
+- `npm run ai-9router-test` — checks the local 9Router service; it requires that service to be running locally.
+
+Do not use `npm audit fix --force`; review dependency changes separately.
