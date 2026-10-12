@@ -10,6 +10,7 @@ function setValidConfig(){
     roles:['Power BI Developer'],
     locations:['Delhi'],
     maxAgeHours:6,
+    minExperienceYears:5,
     minMatchScore:60,
     runEveryMinutes:30,
     maxPagesPerSearch:1,
@@ -34,10 +35,13 @@ test('accepts a safe dry-run configuration',()=>{
   assert.doesNotThrow(()=>validateConfig());
 });
 
-test('rejects invalid freshness and match-score ranges',()=>{
+test('rejects invalid freshness, experience, and match-score ranges',()=>{
   setValidConfig();
   config.maxAgeHours=0;
   assert.throws(()=>validateConfig(),/JOB_MAX_AGE_HOURS/);
+  setValidConfig();
+  config.minExperienceYears=-1;
+  assert.throws(()=>validateConfig(),/JOB_MIN_EXPERIENCE_YEARS/);
   setValidConfig();
   config.minMatchScore=101;
   assert.throws(()=>validateConfig(),/MIN_MATCH_SCORE/);
