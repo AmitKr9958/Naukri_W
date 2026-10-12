@@ -1,10 +1,11 @@
-test('rotates query batches by scheduler interval without losing coverage',()=>{
+test('rotates query batches across successive cycles without losing coverage',()=>{
   const queries=['Power BI','Data Analyst','Business Intelligence','Reporting Analyst','Fabric Analytics Engineer','Microsoft Fabric'];
-  assert.deepEqual(selectSearchBatch(queries,3,0,30),queries.slice(0,3));
-  assert.deepEqual(selectSearchBatch(queries,3,30*60*1000,30),queries.slice(3,6));
-  assert.deepEqual(selectSearchBatch(queries,3,60*60*1000,30),queries.slice(0,3));
-  assert.deepEqual(selectSearchBatch(queries,10,0,30),queries);
-  assert.deepEqual(selectSearchBatch(['Power BI','Power BI','Data Analyst'],1,0,30),['Power BI']);
+  assert.deepEqual(selectSearchBatch(queries,3,0),queries.slice(0,3));
+  assert.deepEqual(selectSearchBatch(queries,3,1),queries.slice(3,6));
+  assert.deepEqual(selectSearchBatch(queries,3,2),queries.slice(0,3));
+  assert.deepEqual(selectSearchBatch(queries,10,1),queries);
+  assert.deepEqual(selectSearchBatch(['Power BI','Power BI','Data Analyst'],1,0),['Power BI']);
+  assert.deepEqual(selectSearchBatch(queries,3,-1),queries.slice(3,6));
 });
 
 import test from 'node:test';
