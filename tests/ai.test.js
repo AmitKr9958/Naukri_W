@@ -67,6 +67,35 @@ test('logs a useful diagnostic and falls back safely when AI content is empty',a
   }finally{globalThis.fetch=originalFetch;console.warn=originalWarn;}
 });
 
+
+test('accepts OpenAI-compatible choice text responses',async()=>{
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>mockResponse({choices:[{text:JSON.stringify({
+    relevant:true,fit:85,roleFit:90,reason:'Strong match.',missing:[]
+  })}]});
+  try{
+    const [result]=await analyzeJobs(baseConfig,[job],resume);
+    assert.equal(result.relevant,true);
+    assert.equal(result.aiFit,85);
+    assert.equal(result.roleFit,90);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
+test('reports safe response-shape diagnostics when endpoint returns no choices',async()=>{
+  const originalFetch=globalThis.fetch;
+  const originalWarn=console.warn;
+  const warnings=[];
+  globalThis.fetch=async()=>mockResponse({error:{message:'model temporarily unavailable'},request_id:'synthetic-id'});
+  console.warn=(message)=>warnings.push(String(message));
+  try{
+    const [result]=await analyzeJobs(baseConfig,[job],resume);
+    assert.equal(result.relevant,null);
+    assert.match(warnings[0],/topLevelKeys=error,request_id/);
+    assert.match(warnings[0],/providerError=model temporarily unavailable/);
+    assert.doesNotMatch(warnings[0],/test-key-not-real/);
+  }finally{globalThis.fetch=originalFetch;console.warn=originalWarn;}
+});
+
 test('does not call AI when consent is disabled',async()=>{
   const originalFetch=globalThis.fetch;
   globalThis.fetch=async()=>{throw new Error('fetch must not be called');};
