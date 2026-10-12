@@ -323,18 +323,13 @@ export async function assertNaukriReachable(page) {
 async function launchContext(c) {
   const chromium = await getChromium();
   // Prefer installed Google Chrome — Chromium is blocked by Naukri/Akamai much more often.
+  // Use the browser's real default user agent and security sandbox.
+  // Do not disguise automation or bypass Naukri's access controls.
   const base = {
     headless: c.headless,
     viewport: {width: 1440, height: 900},
     locale: 'en-IN',
-    timezoneId: 'Asia/Kolkata',
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    // Do not hide automation or bypass site protections; keep only stability flags.
-    args: [
-      '--no-sandbox',
-      '--disable-dev-shm-usage'
-    ]
+    timezoneId: 'Asia/Kolkata'
   };
 
   const isProfileLockError = err => {
