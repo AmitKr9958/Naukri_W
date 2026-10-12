@@ -23,6 +23,21 @@ function resolveChromeExecutable() {
 
 const slugify = s => String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+// Deterministically rotate query batches by scheduler interval. This avoids
+// writing rotation state during dry-run while covering all queries over time.
+export function selectSearchBatch(queries, batchSize = 3, nowMs = Date.now(), intervalMinutes = 30) {
+  const unique = [...new Set((queries || []).map(value => String(value).trim()).filter(Boolean))];
+  if (!unique.length) return [];
+  const requestedSize = Number(batchSize);
+  const size = Number.isInteger(requestedSize) && requestedSize > 0 ? requestedSize : 3;
+  if (size >= unique.length) return unique;
+  const minutes = Number(intervalMinutes);
+  const intervalMs = (Number.isFinite(minutes) && minutes > 0 ? minutes : 30) * 60000;
+  const batchCount = Math.ceil(unique.length / size);
+  const batchIndex = Math.floor(Math.max(0, Number(nowMs) || 0) / intervalMs) % batchCount;
+  return unique.slice(batchIndex * size, (batchIndex + 1) * size);
+}
+
 // Naukri changes result-card class names periodically. Keep legacy selectors and
 // add resilient class/semantic fallbacks for current job listing cards.
 // CSS-module classes (styles_*) and generic job-listing anchors are included
@@ -962,21 +977,30 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
   // is not exposed. The strict 6-hour parser below remains authoritative.
   let resultUrl = page.url();
   const alreadyHasNDate = /(?:^|[?&])(?:nDate|freshness)=1(?:&|$)/i.test(resultUrl);
-  const freshnessUiApplied = await selectFreshnessLastDay(page);
-  // URL already includes nDate=1 from buildNaukriSearchUrl — avoid a second navigation.
-  if (!freshnessUiApplied && !alreadyHasNDate) {
-    try {
-      const u = new URL(resultUrl);
-      u.searchParams.set('nDate', '1');
-      await page.goto(u.href, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
-      await page.waitForTimeout(Math.min(c.pageDelayMs, 500));
+  // Direct search URLs already request the last day. Avoid repeatedly opening
+  // the Freshness UI on every tab unless the URL lacks that filter.
+  let freshnessUiApplied = false;
+  if (!alreadyHasNDate) {
+    freshnessUiApplied = await selectFreshnessLastDay(page);
+    if (!freshnessUiApplied) {
+      try {
+        const u = new URL(resultUrl);
+        u.searchParams.set('nDate', '1');
+        await page.goto(u.href, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
+        await page.waitForTimeout(Math.min(c.pageDelayMs, 500));
+        resultUrl = page.url();
+      } catch {}
+    } else {
       resultUrl = page.url();
-    } catch {}
+    }
   } else {
     resultUrl = page.url();
   }
 
-  const sortedByDate = await selectSortByDate(page);
+  // With one page per search there is no pagination to sort/short-circuit.
+  // Keep the UI sort behavior for users who explicitly enable page 2.
+  const singlePageSearch = Math.min(c.maxPagesPerSearch, 2) <= 1;
+  const sortedByDate = singlePageSearch ? false : await selectSortByDate(page);
   const freshnessFilterApplied =
     freshnessUiApplied || /(?:^|[?&])(?:nDate|freshness)=1(?:&|$)/i.test(resultUrl);
   console.info(JSON.stringify({
@@ -995,8 +1019,10 @@ export async function searchJobs(page, c) {
   const out = [];
   const seen = new Set();
 
-  // Search broadly, then let the deterministic matcher + AI do the precise role fit.
-  const searchQueries = [...new Set((c.searchQueries || c.roles).map(x => String(x).trim()).filter(Boolean))];
+  // Search all configured query categories over time, but only half per cycle.
+  // The scheduler interval drives rotation; no cursor file is written in dry-run.
+  const allSearchQueries = [...new Set((c.searchQueries || c.roles).map(x => String(x).trim()).filter(Boolean))];
+  const searchQueries = selectSearchBatch(allSearchQueries, c.searchBatchSize, Date.now(), c.runEveryMinutes);
   // Gurgaon and Gurugram are the same target for this watcher; searching both
   // produces almost identical Naukri pages and wastes a full search cycle.
   const configuredLocations = c.locations.length ? [...c.locations] : [''];
@@ -1023,6 +1049,8 @@ export async function searchJobs(page, c) {
     tabs: concurrency,
     tasks: tasks.length,
     queries: searchQueries,
+    totalConfiguredQueries: allSearchQueries.length,
+    queryBatchSize: c.searchBatchSize,
     locations: searchLocations
   }));
 
