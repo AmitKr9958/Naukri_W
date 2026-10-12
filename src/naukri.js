@@ -44,7 +44,10 @@ const JOB_CARD_SELECTOR = [
 export function parseAgeHours(raw) {
   const s = String(raw || '').replace(/\s+/g, ' ').trim().toLowerCase();
   if (!s) return null;
-  if (/just now|moments? ago|today/.test(s)) return 0;
+  if (/just now|moments? ago/.test(s)) return 0;
+  // "Today" has no precise time and may mean up to 24 hours old. Do not
+  // pretend it is fresh enough for a strict six-hour window.
+  if (/\btoday\b/.test(s)) return null;
   if (/yesterday/.test(s)) return 24;
   let m = s.match(/(\d+(?:\.\d+)?)\s*(?:minute|minutes|min|mins)\s*(?:ago)?/);
   if (m) return Number(m[1]) / 60;
