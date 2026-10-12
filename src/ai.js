@@ -49,7 +49,7 @@ async function analyzeOne(c,job,resume){
       job:{title:redact(job.title),company:redact(job.company),location:redact(job.location),description:redactForAI(job.description)},
       task:'Evaluate this job for the candidate and return the required JSON object.'
     })}
-  ],temperature:0.1,max_tokens:1200,stream:false};
+  ],temperature:0.1,max_tokens:1200,stream:false,response_format:{type:'json_object'}};
 
   const data=await withRetry(async()=>{
     const r=await fetch(c.aiBaseUrl.replace(/\/$/,'')+'/chat/completions',{
