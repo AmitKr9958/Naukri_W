@@ -139,10 +139,19 @@ async function nextPageUrl(page, currentUrl) {
   return null;
 }
 
-function findPostedText(raw, preferred) {
+export function findPostedText(raw, preferred) {
+  // Only trust a standalone posting-age label. Parsing arbitrary lines can
+  // mistake titles such as "Data Analyst (3 months Contract)" for job age.
+  const isExplicitAgeLabel = value => {
+    const label = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!/^(?:posted\s*:?\s*)?(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s+ago|yesterday|today)$/i.test(label)) {
+      return false;
+    }
+    return parseAgeHours(label) !== null || /\btoday\b/i.test(label);
+  };
   const candidates = [preferred, ...String(raw || '').split(/\n+/).map(x => x.trim())].filter(Boolean);
   for (const value of candidates) {
-    if (parseAgeHours(value) !== null) return value;
+    if (isExplicitAgeLabel(value)) return value;
   }
   return '';
 }
@@ -199,7 +208,7 @@ async function collectJobCards(page) {
       '[class*="styles_tuple" i]','article:has(a[href*="job-listings-"])',
       'div:has(> a[href*="job-listings-"])','li:has(a[href*="job-listings-"])'
     ].join(',');
-    const ageLine = value => /\b(?:just now|moments? ago|few\s+(?:minutes?|hours?)|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s*(?:ago)?|yesterday)\b/i.test(value || '');
+    const ageLine = value => /^(?:posted\s*:?\s*)?(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s+ago|yesterday|today)$/i.test(String(value || '').trim());
     const read = (card, href) => {
       if (!card || !href) return null;
       const raw = String(card.innerText || '').trim();
@@ -1125,7 +1134,8 @@ export async function searchJobs(page, c) {
           search: q,
           location: loc || 'ALL',
           page: pageNo,
-          cards,
+          cards: extracted.uniqueCards,
+          recognizedListingLinks: cards,
           freshCards: eligibleFresh.length,
           freshnessQualifiedCards: extracted.fresh.length,
           rejectedByFreshness: extracted.rejectedByFreshness,
@@ -1137,7 +1147,8 @@ export async function searchJobs(page, c) {
         search: q,
         location: loc || 'ALL',
         page: pageNo,
-        cards,
+        cards: extracted.uniqueCards,
+        recognizedListingLinks: cards,
         uniqueCards: extracted.uniqueCards,
         freshCards: eligibleFresh.length,
         freshnessQualifiedCards: extracted.fresh.length,
