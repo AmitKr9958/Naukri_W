@@ -1257,6 +1257,12 @@ export async function searchJobs(page, c) {
             }));
           }
         }
+        // Pace requests between search tasks, even when a user has configured
+        // multiple tabs. This reduces bursts; it does not bypass site controls.
+        if (!verificationRequired) {
+          const taskDelayMs = Math.min(Math.max(Number(c.pageDelayMs) || 1200, 1000), 5000);
+          await tab.waitForTimeout(taskDelayMs).catch(() => {});
+        }
       }
     } finally {
       if (workerId !== 0) await tab.close().catch(() => {});
