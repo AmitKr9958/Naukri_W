@@ -38,7 +38,8 @@ For the complete first test in one step, use `scripts/test-once.ps1` instead. It
 ## Watcher settings
 
 - `RUN_EVERY_MINUTES`: schedule interval; minimum 10 minutes.
-- `JOB_MAX_AGE_HOURS`: maximum age for a job posting; default 6.
+- `JOB_MAX_AGE_HOURS`: maximum age for a job posting; default 6. Labels that say only "today" are treated as unknown and rejected because they cannot prove a listing is within six hours.
+- `JOB_MIN_EXPERIENCE_YEARS`: reject listings whose explicit experience range ends below this value; default 5. Missing experience ranges are not automatically rejected.
 - `JOB_LOCATIONS`: preferred cities.
 - `JOB_ROLES` and `JOB_SEARCH_QUERIES`: roles to search and accept.
 - `MIN_MATCH_SCORE`: minimum final score for an alert.
