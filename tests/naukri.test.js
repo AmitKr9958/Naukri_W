@@ -1,6 +1,15 @@
+test('rotates query batches by scheduler interval without losing coverage',()=>{
+  const queries=['Power BI','Data Analyst','Business Intelligence','Reporting Analyst','Fabric Analytics Engineer','Microsoft Fabric'];
+  assert.deepEqual(selectSearchBatch(queries,3,0,30),queries.slice(0,3));
+  assert.deepEqual(selectSearchBatch(queries,3,30*60*1000,30),queries.slice(3,6));
+  assert.deepEqual(selectSearchBatch(queries,3,60*60*1000,30),queries.slice(0,3));
+  assert.deepEqual(selectSearchBatch(queries,10,0,30),queries);
+  assert.deepEqual(selectSearchBatch(['Power BI','Power BI','Data Analyst'],1,0,30),['Power BI']);
+});
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canonicalJobUrl,nextSearchPageUrl,parseAgeHours,remoteJobMatchesPreferredLocation} from '../src/naukri.js';
+import {canonicalJobUrl,nextSearchPageUrl,parseAgeHours,remoteJobMatchesPreferredLocation,selectSearchBatch} from '../src/naukri.js';
 
 test('finds Naukri Next page and avoids loops',()=>{
   const current='https://www.naukri.com/power-bi-developer-jobs-in-gurgaon';
