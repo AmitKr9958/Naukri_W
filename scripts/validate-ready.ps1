@@ -25,7 +25,7 @@ Write-Host "Node.js: $nodeVersion"
 Write-Host "Repository: $root"
 Write-Host "This script does not launch Naukri, send Telegram messages, or change DRY_RUN."
 
-Invoke-NpmCheck "Install dependencies" @("install", "--no-audit", "--no-fund")
+Invoke-NpmCheck "Install dependencies" @("install", "--no-audit", "--no-fund", "--package-lock=false")
 Invoke-NpmCheck "JavaScript syntax checks" @("run", "lint")
 Invoke-NpmCheck "Automated test suite" @("test")
 Invoke-NpmCheck "Local configuration and resume preflight" @("run", "preflight")
