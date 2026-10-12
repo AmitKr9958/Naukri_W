@@ -18,6 +18,12 @@ if ($original -match "(?m)^AI_ENABLED=true\s*$" -and $original -notmatch "(?m)^A
   throw "AI_ENABLED=true requires AI_CONSENT=true."
 }
 
+Write-Host "Running local preflight before changing production settings..." -ForegroundColor Cyan
+& npm run preflight
+if ($LASTEXITCODE -ne 0) {
+  throw "Local preflight failed. Production settings were not changed."
+}
+
 $backup = "$envFile.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 Copy-Item -LiteralPath $envFile -Destination $backup
 $text = $original
@@ -34,7 +40,7 @@ $text = Set-EnvValue $text "RUN_EVERY_MINUTES" "30"
 $text = Set-EnvValue $text "RUN_ON_START" "true"
 $text = Set-EnvValue $text "DRY_RUN" "false"
 $text = Set-EnvValue $text "NAUKRI_HEADLESS" "true"
-$text = Set-EnvValue $text "NAUKRI_AUTO_LOGIN" "true"
+$text = Set-EnvValue $text "NAUKRI_AUTO_LOGIN" "false"
 Set-Content -LiteralPath $envFile -Value $text -Encoding utf8
 
 try {
@@ -45,7 +51,7 @@ try {
   $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
   $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
   Write-Host ""
-  Write-Host "Production task installed and started." -ForegroundColor Green
+  Write-Host "Production task installed and started. It will reuse the manually authenticated browser profile." -ForegroundColor Green
   Write-Host "Task: $taskName"
   Write-Host "State: $($task.State)"
   Write-Host "Last run: $($info.LastRunTime)"
