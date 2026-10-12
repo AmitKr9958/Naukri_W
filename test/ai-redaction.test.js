@@ -11,3 +11,13 @@ test('AI redaction removes sensitive resume data',()=>{
   assert.doesNotMatch(out,/ABCDE1234F/);
   assert.doesNotMatch(out,/12 Main Street/);
 });
+
+test('redacts unlabelled PAN, Indian postal codes, and numbered street addresses',()=>{
+  const out=redactForAI('PAN ABCDE1234F, home at 12 Main Street, New Delhi 110059.');
+  assert.doesNotMatch(out,/ABCDE1234F/i);
+  assert.doesNotMatch(out,/12 Main Street/i);
+  assert.doesNotMatch(out,/110059/);
+  assert.match(out,/\[ID REDACTED\]/);
+  assert.match(out,/\[ADDRESS REDACTED\]/);
+  assert.match(out,/\[POSTAL CODE REDACTED\]/);
+});
