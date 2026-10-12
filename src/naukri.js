@@ -85,14 +85,15 @@ export function parseAgeHours(raw) {
 // but never accept a title/description such as "3 months contract" as posting age.
 export function normalizeAgeLabel(value) {
   const label = String(value || '')
-    .replace(/\\u00a0/g, ' ')
+    .replace(/\u00a0/g, ' ')
     .replace(/[•·|]+/g, ' ')
-    .replace(/\\s+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
-    .replace(/^posted\\s*:?\\s*/i, '')
+    .replace(/^posted\s*:?\s*/i, '')
     .trim();
-  if (!/^(?:just now|moments? ago|few\\s+(?:minutes?|hours?)(?:\\s+ago)?|\\d+(?:\\.\\d+)?\\+?\\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)(?:\\s+ago)?|yesterday|today)$/i.test(label)) return '';
+  if (!/^(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)(?:\s+ago)?|yesterday|today)$/i.test(label)) return '';
   return label;
+}
 }
 
 async function textFromFirst(card, selectors) {
@@ -156,12 +157,13 @@ async function nextPageUrl(page, currentUrl) {
 export function findPostedText(raw, preferred) {
   // Only trust a standalone posting-age label. Parsing arbitrary lines can
   // mistake titles such as "Data Analyst (3 months Contract)" for job age.
-  const candidates = [preferred, ...String(raw || '').split(/\\n+/).map(x => x.trim())].filter(Boolean);
+  const candidates = [preferred, ...String(raw || '').split(/\n+/).map(x => x.trim())].filter(Boolean);
   for (const value of candidates) {
     const label = normalizeAgeLabel(value);
-    if (label && (parseAgeHours(label) !== null || /\\btoday\\b/i.test(label))) return label;
+    if (label && (parseAgeHours(label) !== null || /\btoday\b/i.test(label))) return label;
   }
   return '';
+}
 }
 
 // Remote jobs are only eligible when the listing itself mentions one of the configured target cities.
@@ -217,13 +219,13 @@ async function collectJobCards(page) {
       'div:has(> a[href*="job-listings-"])','li:has(a[href*="job-listings-"])'
     ].join(',');
     const ageLine = value => {
-      const label = String(value || '').replace(/\\u00a0/g, ' ').replace(/[•·|]+/g, ' ').replace(/\\s+/g, ' ').trim().replace(/^posted\\s*:?\\s*/i, '').trim();
-      return /^(?:just now|moments? ago|few\\s+(?:minutes?|hours?)(?:\\s+ago)?|\\d+(?:\\.\\d+)?\\+?\\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)(?:\\s+ago)?|yesterday|today)$/i.test(label);
+      const label = String(value || '').replace(/\u00a0/g, ' ').replace(/[•·|]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^posted\s*:?\s*/i, '').trim();
+      return /^(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)(?:\s+ago)?|yesterday|today)$/i.test(label);
     };
     const read = (card, href) => {
       if (!card || !href) return null;
       const raw = String(card.innerText || '').trim();
-      if (raw.length < 35 || raw.length > 3500 || !raw.split(/\n+/).some(ageLine)) return null;
+      if (raw.length < 20 || raw.length > 8000 || !raw.split(/\n+/).some(ageLine)) return null;
       const first = selectors => {
         for (const selector of selectors) {
           const el = card.querySelector(selector);
