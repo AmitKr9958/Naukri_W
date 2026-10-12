@@ -41,5 +41,5 @@ if ($aiEnabled -and $aiConsent) {
 }
 
 Write-Host ""
-Write-Host "VALIDATION PASSED — project is ready for your controlled dry-run test." -ForegroundColor Green
+Write-Host "VALIDATION PASSED - project is ready for your controlled dry-run test." -ForegroundColor Green
 Write-Host "No Naukri search was started and no Telegram message was sent."
