@@ -36,6 +36,7 @@ test('normalizes standalone posting-age labels without accepting contract durati
   assert.equal(normalizeAgeLabel('Posted today'), 'today');
   assert.equal(normalizeAgeLabel('Data Analyst (3 months Contract)'), '');
   assert.equal(normalizeAgeLabel('3 months contract'), '');
+  assert.equal(normalizeAgeLabel('3 months'), '');
 });
 
 test('keeps strict freshness parsing',()=>{
