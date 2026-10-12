@@ -186,89 +186,95 @@ async function recognizedJobCardCount(page) {
   return 0;
 }
 
-async function collectJobCardLocators(page) {
-  // Bind each result card to the exact listing URL that identified it. Naukri
-  // nests several links inside cards, so rediscovering the first link later can
-  // assign a different job URL to the card and lose valid listings.
-  const structured = await page.locator(JOB_CARD_SELECTOR).all();
-  // Prefer the canonical job-listings path; also accept /job/ deep links and id params.
-  const links = await page
-    .locator('a[href*="job-listings-"],a[href*="job-listings"],a[href*="/job/"],a[href*="jobid="],a[href*="jd="]')
-    .all();
-  const cards = [];
-  const seen = new Set();
+async function collectJobCards(page) {
+  // Read all listing-card fields in one browser-side pass. The previous
+  // implementation made hundreds of separate Playwright calls per results
+  // page while climbing every link's ancestors.
+  return page.evaluate(() => {
+    const linkSelector = 'a[href*="job-listings-"],a[href*="job-listings"],a[href*="/job/"],a[href*="jobid="],a[href*="jd="]';
+    const cardSelector = [
+      '.cust-job-tuple','.srp-jobtuple-wrapper','[data-job-id]',
+      '[class*="jobtuple" i]','[class*="job-tuple" i]',
+      '[class*="styles_jlc" i]','[class*="styles_job-tuple" i]',
+      '[class*="styles_tuple" i]','article:has(a[href*="job-listings-"])',
+      'div:has(> a[href*="job-listings-"])','li:has(a[href*="job-listings-"])'
+    ].join(',');
+    const ageLine = value => /\b(?:just now|moments? ago|\d+(?:\.\d+)?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s*(?:ago)?|yesterday)\b/i.test(value || '');
+    const read = (card, href) => {
+      if (!card || !href) return null;
+      const raw = String(card.innerText || '').trim();
+      if (raw.length < 35 || raw.length > 3500 || !raw.split(/\n+/).some(ageLine)) return null;
+      const first = selectors => {
+        for (const selector of selectors) {
+          const el = card.querySelector(selector);
+          const value = String(el?.innerText || el?.getAttribute('title') || '').trim();
+          if (value) return value;
+        }
+        return '';
+      };
+      const lines = raw.split(/\n+/).map(x => x.trim()).filter(Boolean);
+      const title = first(['a[href*="job-listings"]','a[href*="/job/"]']) || lines[0] || '';
+      const preferredPosted = first(['.job-post-day','.job-posted-date','.job-posted','[class*="job-post-day"]','[class*="posted"]']);
+      const location = first(['.locWdth','.loc-wrap [title]','.location','.loc']);
+      const company = first(['.comp-name','.companyInfo a','.companyInfo','.comp-name a']);
+      const description = first(['.job-desc','.job-desc-container']) || raw;
+      return {href,raw,title,preferredPosted,location,company,description};
+    };
 
-  for (const link of links) {
-    const rawHref = await link.getAttribute('href').catch(() => null);
-    const url = canonicalJobUrl(rawHref);
-    if (!url || seen.has(url)) continue;
-
-    let candidate = link;
-    let best = null;
-    let bestText = '';
-    // Select the smallest ancestor containing both useful card text and posted age.
-    for (let depth = 0; depth < 10; depth++) {
-      const raw = (await candidate.innerText().catch(() => '')).trim();
-      const age = parseAgeHours(findPostedText(raw, ''));
-      if (raw.length >= 35 && raw.length <= 3500 && age !== null) {
-        best = candidate;
-        bestText = raw;
-        break;
+    const output = [];
+    const seen = new Set();
+    for (const link of document.querySelectorAll(linkSelector)) {
+      const href = link.getAttribute('href');
+      if (!href) continue;
+      let candidate = link;
+      let found = null;
+      for (let depth = 0; depth < 10 && candidate; depth++, candidate = candidate.parentElement) {
+        found = read(candidate, href);
+        if (found) break;
       }
-      const parent = candidate.locator('xpath=..');
-      if (!(await parent.count().catch(() => 0))) break;
-      candidate = parent;
+      if (!found) continue;
+      const key = new URL(href, location.href).pathname.replace(/\/$/, '');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(found);
     }
-    if (!best) continue;
-    seen.add(url);
-    cards.push({card: best, url, cardText: bestText});
-  }
 
-  // Supplement links whose posted-age label is outside their immediate ancestry.
-  // Some current Naukri cards expose the date only in a legacy wrapper.
-  for (const card of structured) {
-    const raw = (await card.innerText().catch(() => '')).trim();
-    if (raw.length < 35 || raw.length > 3500 || parseAgeHours(findPostedText(raw, '')) === null) continue;
-    const anchors = await card.locator('a[href]').all();
-    let url = null;
-    for (const anchor of anchors) {
-      const href = await anchor.getAttribute('href').catch(() => null);
-      if (/job-listings|\/job\//i.test(String(href || ''))) {
-        url = canonicalJobUrl(href);
-        if (url) break;
-      }
+    // Fallback for cards where the posting-age label is in a wrapper that is
+    // not an ancestor of the listing link.
+    for (const card of document.querySelectorAll(cardSelector)) {
+      const link = card.querySelector(linkSelector);
+      if (!link) continue;
+      const href = link.getAttribute('href');
+      if (!href) continue;
+      const key = new URL(href, location.href).pathname.replace(/\/$/, '');
+      if (seen.has(key)) continue;
+      const found = read(card, href);
+      if (!found) continue;
+      seen.add(key);
+      output.push(found);
     }
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    cards.push({card, url, cardText: raw});
-  }
-  return cards;
+    return output.slice(0, 100);
+  }).catch(() => []);
 }
+
 async function extractFreshCards(page, c) {
+  const startedAt = Date.now();
   const fresh = [];
   let rejectedByFreshness = 0;
   const diagnostics = [];
-  const cards = await collectJobCardLocators(page);
+  const cards = await collectJobCards(page);
   const seenCardUrls = new Set();
-  let parsedAges = [];
+  const parsedAges = [];
 
   for (const entry of cards.slice(0, 50)) {
-    const card = entry.card;
-    const raw = entry.cardText || await card.innerText().catch(() => '');
-    const link = entry.url;
+    const link = canonicalJobUrl(entry.href);
     if (!link || seenCardUrls.has(link)) continue;
     seenCardUrls.add(link);
 
+    const raw = String(entry.raw || '');
     const lines = raw.split('\n').map(x => x.trim()).filter(Boolean);
-    const titleAnchor = card.locator('a[href*="job-listings"],a[href*="/job/"]').first();
-    const title = (await titleAnchor.innerText().catch(() => '')).trim() || lines[0] || '';
-    const preferredPosted = await textFromFirst(card, [
-      '.job-post-day',
-      '.job-posted-date',
-      '.job-posted',
-      '[class*="job-post-day"]',
-      '[class*="posted"]'
-    ]);
+    const title = String(entry.title || '').trim() || lines[0] || '';
+    const preferredPosted = String(entry.preferredPosted || '').trim();
     const postedText = findPostedText(raw, preferredPosted);
     const ageHours = parseAgeHours(postedText);
 
@@ -284,14 +290,14 @@ async function extractFreshCards(page, c) {
     }
 
     const location =
-      (await textFromFirst(card, ['.locWdth', '.loc-wrap [title]', '.location', '.loc'])) ||
+      String(entry.location || '').trim() ||
       lines.find(x => c.locations.some(l => x.toLowerCase().includes(l.toLowerCase()))) ||
       '';
     const company =
-      (await textFromFirst(card, ['.comp-name', '.companyInfo a', '.companyInfo', '.comp-name a'])) ||
+      String(entry.company || '').trim() ||
       lines.find(x => x !== title && x.length > 1 && !/^(save|apply|posted|\d+\s*(minute|min|hour|hr|day|days|d)\b)/i.test(x)) ||
       '';
-    const description = (await textFromFirst(card, ['.job-desc', '.job-desc-container'])) || raw;
+    const description = String(entry.description || '').trim() || raw;
 
     fresh.push({title, company, location, description, url: link, ageHours, postedText});
   }
@@ -307,6 +313,7 @@ async function extractFreshCards(page, c) {
     parsedAges,
     newestAgeHours,
     oldestAgeHours,
+    extractionMs: Date.now() - startedAt,
     allParsedOlderThanMax: parsedAges.length > 0 && parsedAges.every(age => age > c.maxAgeHours)
   };
 }
