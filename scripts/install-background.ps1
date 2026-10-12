@@ -34,7 +34,7 @@ if (Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue) {
 $runner = Join-Path $root "scripts\run-background.ps1"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"') -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -AtLogOn
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 30)
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 30) -ExecutionTimeLimit ([TimeSpan]::Zero)
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description "30-minute Naukri job watcher with Telegram alerts" -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
 
