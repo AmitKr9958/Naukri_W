@@ -29,6 +29,7 @@ export const config={
   pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,400),
   // Same browser, up to five tabs. Higher concurrency can trigger Naukri bot checks.
   searchConcurrency:positiveInt(process.env.SEARCH_CONCURRENCY,5),
+  searchBatchSize:positiveInt(process.env.JOB_SEARCH_BATCH_SIZE,3),
   telegramToken:process.env.TELEGRAM_BOT_TOKEN||'',
   telegramChatId:process.env.TELEGRAM_CHAT_ID||'',
   aiEnabled:bool(process.env.AI_ENABLED,false),
@@ -54,6 +55,7 @@ export function validateConfig(){
   if(!Number.isInteger(config.runEveryMinutes)||config.runEveryMinutes<10)m.push('RUN_EVERY_MINUTES (integer >= 10)');
   if(!Number.isInteger(config.maxPagesPerSearch)||config.maxPagesPerSearch<1||config.maxPagesPerSearch>2)m.push('MAX_PAGES_PER_SEARCH (1-2)');
   if(!Number.isInteger(config.searchConcurrency)||config.searchConcurrency<1||config.searchConcurrency>5)m.push('SEARCH_CONCURRENCY (1-5)');
+  if(!Number.isInteger(config.searchBatchSize)||config.searchBatchSize<1||config.searchBatchSize>20)m.push('JOB_SEARCH_BATCH_SIZE (1-20)');
   if(!Number.isFinite(config.pageDelayMs)||config.pageDelayMs<0)m.push('PAGE_DELAY_MS (>= 0)');
   if(config.aiCandidateLimit<config.maxJobsPerRun)console.warn('AI_CANDIDATE_LIMIT is below MAX_JOBS_PER_RUN; increase it to preserve broad AI ranking.');
   if(config.aiEnabled&&!config.aiConsent)console.warn('AI is enabled but AI_CONSENT=false; AI analysis will be skipped.');
