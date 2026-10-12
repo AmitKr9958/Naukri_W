@@ -43,6 +43,7 @@ test('scores a valid structured AI response and disables streaming',async()=>{
     assert.equal(result.finalScore,85);
     assert.equal(request.url,'https://openrouter.ai/api/v1/chat/completions');
     assert.equal(request.body.stream,false);
+    assert.deepEqual(request.body.response_format,{type:'json_object'});
     assert.equal(request.body.model,baseConfig.aiModel);
     assert.equal(request.authorization,'Bearer test-key-not-real');
   }finally{globalThis.fetch=originalFetch;}
