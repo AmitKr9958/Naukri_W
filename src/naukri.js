@@ -23,19 +23,21 @@ function resolveChromeExecutable() {
 
 const slugify = s => String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-// Deterministically rotate query batches by scheduler interval. This avoids
-// writing rotation state during dry-run while covering all queries over time.
-export function selectSearchBatch(queries, batchSize = 3, nowMs = Date.now(), intervalMinutes = 30) {
+// Rotate in memory only: no cursor file is written, including during dry-run.
+// The counter advances once per search cycle, even if a cycle takes longer than expected.
+let searchBatchRunCounter = 0;
+export function selectSearchBatch(queries, batchSize = 3, batchIndex = 0) {
   const unique = [...new Set((queries || []).map(value => String(value).trim()).filter(Boolean))];
   if (!unique.length) return [];
   const requestedSize = Number(batchSize);
   const size = Number.isInteger(requestedSize) && requestedSize > 0 ? requestedSize : 3;
   if (size >= unique.length) return unique;
-  const minutes = Number(intervalMinutes);
-  const intervalMs = (Number.isFinite(minutes) && minutes > 0 ? minutes : 30) * 60000;
   const batchCount = Math.ceil(unique.length / size);
-  const batchIndex = Math.floor(Math.max(0, Number(nowMs) || 0) / intervalMs) % batchCount;
-  return unique.slice(batchIndex * size, (batchIndex + 1) * size);
+  const requestedIndex = Number(batchIndex);
+  const normalizedIndex = Number.isInteger(requestedIndex)
+    ? ((requestedIndex % batchCount) + batchCount) % batchCount
+    : 0;
+  return unique.slice(normalizedIndex * size, (normalizedIndex + 1) * size);
 }
 
 // Naukri changes result-card class names periodically. Keep legacy selectors and
@@ -1022,7 +1024,8 @@ export async function searchJobs(page, c) {
   // Search all configured query categories over time, but only half per cycle.
   // The scheduler interval drives rotation; no cursor file is written in dry-run.
   const allSearchQueries = [...new Set((c.searchQueries || c.roles).map(x => String(x).trim()).filter(Boolean))];
-  const searchQueries = selectSearchBatch(allSearchQueries, c.searchBatchSize, Date.now(), c.runEveryMinutes);
+  const activeBatchIndex = searchBatchRunCounter++;
+  const searchQueries = selectSearchBatch(allSearchQueries, c.searchBatchSize, activeBatchIndex);
   // Gurgaon and Gurugram are the same target for this watcher; searching both
   // produces almost identical Naukri pages and wastes a full search cycle.
   const configuredLocations = c.locations.length ? [...c.locations] : [''];
@@ -1051,6 +1054,9 @@ export async function searchJobs(page, c) {
     queries: searchQueries,
     totalConfiguredQueries: allSearchQueries.length,
     queryBatchSize: c.searchBatchSize,
+    queryBatchIndex: allSearchQueries.length > searchQueries.length
+      ? activeBatchIndex % Math.ceil(allSearchQueries.length / Math.max(1, Number(c.searchBatchSize) || 3))
+      : 0,
     locations: searchLocations
   }));
 
