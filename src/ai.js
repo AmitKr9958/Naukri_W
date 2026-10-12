@@ -71,8 +71,16 @@ async function analyzeOne(c,job,resume){
     return response;
   },{retries:1,delayMs:c.retryDelayMs});
 
-  const message=data?.choices?.[0]?.message;
-  if(!message)throw new Error('AI response is missing choices[0].message');
+  const choice=data?.choices?.[0];
+  let message=choice?.message;
+  if(!message&&typeof choice?.text==='string')message={content:choice.text};
+  if(!message&&typeof data?.output_text==='string')message={content:data.output_text};
+  if(!message){
+    const providerError=String(data?.error?.message||data?.message||data?.detail||'').replace(/Bearer\\s+\\S+/gi,'Bearer [REDACTED]').slice(0,180);
+    const keys=data&&typeof data==='object'?Object.keys(data).slice(0,12).join(','):'non-object';
+    const choiceKeys=choice&&typeof choice==='object'?Object.keys(choice).slice(0,12).join(','):'none';
+    throw new Error('AI response has no usable assistant message (topLevelKeys='+keys+'; choiceKeys='+choiceKeys+(providerError?'; providerError='+providerError:'')+')');
+  }
   const parsed=parseJson(messageText(message));
   if(typeof parsed.relevant!=='boolean')throw new Error('AI relevant must be boolean');
   const aiFit=Number(parsed.fit);
