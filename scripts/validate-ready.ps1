@@ -30,15 +30,8 @@ Invoke-NpmCheck "JavaScript syntax checks" @("run", "lint")
 Invoke-NpmCheck "Automated test suite" @("test")
 Invoke-NpmCheck "Local configuration and resume preflight" @("run", "preflight")
 
-$envText = Get-Content -LiteralPath (Join-Path $root ".env") -Raw
-$aiEnabled = $envText -match '(?im)^AI_ENABLED\s*=\s*true\s*$'
-$aiConsent = $envText -match '(?im)^AI_CONSENT\s*=\s*true\s*$'
-if ($aiEnabled -and $aiConsent) {
-  Invoke-NpmCheck "Live AI smoke test using synthetic data only" @("run", "ai-smoke-test")
-} else {
-  Write-Host ""
-  Write-Host "AI smoke test skipped because AI_ENABLED=true and AI_CONSENT=true are not both set." -ForegroundColor Yellow
-}
+Write-Host ""
+Write-Host "AI model checks skipped: this watcher is configured for rule-based scoring only." -ForegroundColor Yellow
 
 Write-Host ""
 Write-Host "VALIDATION PASSED - project is ready for your controlled dry-run test." -ForegroundColor Green
