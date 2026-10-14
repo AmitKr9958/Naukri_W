@@ -26,7 +26,8 @@ export const config={
   aiCandidateLimit:positiveInt(process.env.AI_CANDIDATE_LIMIT,30),
   // Default 1 page: for a strict 6h freshness window, page 2 is almost always stale.
   maxPagesPerSearch:positiveInt(process.env.MAX_PAGES_PER_SEARCH,1),
-  pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,400),
+  // Conservative pacing for Naukri; runtime enforces a minimum 1500ms between searches.
+  pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,1500),
   // Same browser, up to five tabs. Higher concurrency can trigger Naukri bot checks.
   // Default to one tab; parallel Naukri searches can trigger CAPTCHA/security checks.
   searchConcurrency:positiveInt(process.env.SEARCH_CONCURRENCY,1),
