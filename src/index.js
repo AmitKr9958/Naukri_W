@@ -37,9 +37,13 @@ async function runOnce(){
     const scored=unseen.map(j=>({...j,...scoreJob(j,profile)})).sort((a,b)=>b.score-a.score);
     // This watcher is intentionally rule-based only: no AI module import,
     // model request, API key, or resume transmission to an AI provider.
-    const pool=scored.slice(0,config.maxJobsPerRun);
+    // Apply the score threshold before limiting results, so lower-ranked
+    // qualifying jobs are not hidden by candidates below the threshold.
+    const ranked=scored.filter(j=>j.score>=config.minMatchScore)
+      .sort((a,b)=>b.score-a.score);
+    const matches=ranked.slice(0,config.maxJobsPerRun);
     logger.info({
-      candidates:pool.map(j=>({
+      candidates:matches.map(j=>({
         title:j.title,
         url:j.url,
         company:j.company,
@@ -50,9 +54,6 @@ async function runOnce(){
       scoringMode:'rule-based',
       minimumScore:config.minMatchScore
     },'Candidate scoring diagnostics');
-    const ranked=pool.filter(j=>j.score>=config.minMatchScore)
-      .sort((a,b)=>b.score-a.score);
-    const matches=ranked.slice(0,config.maxJobsPerRun);
     if(matches.length)await sendTelegram(config,matches);
 
     // A dry-run must be observational: do not mark jobs as seen, otherwise
