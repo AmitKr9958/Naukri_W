@@ -28,8 +28,7 @@ export const config={
   maxPagesPerSearch:positiveInt(process.env.MAX_PAGES_PER_SEARCH,1),
   // Conservative pacing for Naukri; runtime enforces a minimum 1500ms between searches.
   pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,1500),
-  // Same browser, up to five tabs. Higher concurrency can trigger Naukri bot checks.
-  // Default to one tab; parallel Naukri searches can trigger CAPTCHA/security checks.
+  // User-configured value is logged for diagnostics; src/naukri.js enforces one active search.
   searchConcurrency:positiveInt(process.env.SEARCH_CONCURRENCY,1),
   searchBatchSize:positiveInt(process.env.JOB_SEARCH_BATCH_SIZE,3),
   telegramToken:process.env.TELEGRAM_BOT_TOKEN||'',
