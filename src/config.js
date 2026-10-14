@@ -59,9 +59,6 @@ export function validateConfig(){
   if(!Number.isInteger(config.searchBatchSize)||config.searchBatchSize<1||config.searchBatchSize>20)m.push('JOB_SEARCH_BATCH_SIZE (1-20)');
   if(!Number.isFinite(config.pageDelayMs)||config.pageDelayMs<0)m.push('PAGE_DELAY_MS (>= 0)');
   if(config.aiCandidateLimit<config.maxJobsPerRun)console.warn('AI_CANDIDATE_LIMIT is below MAX_JOBS_PER_RUN; increase it to preserve broad AI ranking.');
-  if(config.aiEnabled&&!config.aiConsent)console.warn('AI is enabled but AI_CONSENT=false; AI analysis will be skipped.');
-  if(config.aiEnabled&&config.aiConsent&&!validHttpUrl(config.aiBaseUrl))m.push('AI_BASE_URL (must be a valid HTTP(S) URL)');
-  if(config.aiEnabled&&config.aiConsent&&!localAI(config.aiBaseUrl)&&!config.aiApiKey)m.push('AI_API_KEY (required for non-local AI endpoint)');
   if(config.autoLogin&&!config.naukriUsername)m.push('NAUKRI_USERNAME (required when NAUKRI_AUTO_LOGIN=true)');
   if(config.autoLogin&&!config.naukriPassword)m.push('NAUKRI_PASSWORD (required when NAUKRI_AUTO_LOGIN=true)');
   if(m.length)throw new Error('Missing or invalid configuration: '+m.join(', '));
