@@ -132,6 +132,11 @@ export function canonicalJobUrl(href) {
     return null;
   }
 }
+// Count distinct job URLs, not every matching anchor in a card (title, company, and apply links may repeat).
+export function countUniqueListingLinks(hrefs) {
+  return new Set((hrefs || []).map(canonicalJobUrl).filter(Boolean)).size;
+}
+
 export function nextSearchPageUrl(currentUrl, links) {
   for (const item of links) {
     const href = typeof item === 'string' ? item : item?.href;
@@ -187,7 +192,10 @@ async function recognizedJobCardCount(page) {
     'a[href*="jobid="]',
     'a[href*="jd="]'
   ].join(',');
-  const listingLinks = await page.locator(linkSelectors).count().catch(() => 0);
+  const listingHrefs = await page.locator(linkSelectors)
+    .evaluateAll(elements => elements.map(element => element.getAttribute('href')).filter(Boolean))
+    .catch(() => []);
+  const listingLinks = countUniqueListingLinks(listingHrefs);
   if (listingLinks) return listingLinks;
 
   // Fallback for layouts where card wrappers render before their anchors.
@@ -1143,18 +1151,22 @@ export async function searchJobs(page, c) {
         break;
       }
 
+      const initialRecognizedListingLinks = cards;
       let extracted = await extractFreshCards(tab, c);
       if (cards > 0 && extracted.uniqueCards === 0) {
         console.warn(JSON.stringify({
           search: q,
           location: loc || 'ALL',
           page: pageNo,
-          recognizedListingLinks: cards,
+          initialRecognizedListingLinks,
           message: 'Listing links found but no cards extracted; waiting and retrying extraction once'
         }));
         await tab.waitForTimeout(Math.min(Math.max(c.pageDelayMs, 500), 900));
         extracted = await extractFreshCards(tab, c);
       }
+      // Recount after extraction/retry: Naukri may hydrate cards after the first link probe.
+      // Keeping the first count in a separate field makes timing-related changes visible.
+      cards = await recognizedJobCardCount(tab);
       const isRemoteSearch = /^remote$/i.test(String(loc).trim());
       const eligibleFresh = isRemoteSearch
         ? extracted.fresh.filter(job => remoteJobMatchesPreferredLocation(job, c.locations))
@@ -1167,6 +1179,7 @@ export async function searchJobs(page, c) {
           location: loc || 'ALL',
           page: pageNo,
           cards: extracted.uniqueCards,
+          initialRecognizedListingLinks,
           recognizedListingLinks: cards,
           freshCards: eligibleFresh.length,
           freshnessQualifiedCards: extracted.fresh.length,
@@ -1180,6 +1193,7 @@ export async function searchJobs(page, c) {
         location: loc || 'ALL',
         page: pageNo,
         cards: extracted.uniqueCards,
+        initialRecognizedListingLinks,
         recognizedListingLinks: cards,
         uniqueCards: extracted.uniqueCards,
         freshCards: eligibleFresh.length,
