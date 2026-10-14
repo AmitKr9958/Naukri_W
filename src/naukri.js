@@ -872,15 +872,16 @@ async function selectFreshnessLastDay(page) {
   return false;
 }
 
-function buildNaukriSearchUrl(query, locationLabel) {
+function buildNaukriSearchUrl(query, locationLabel, maxAgeHours = 24) {
   const pathQ = slugify(query || 'jobs') || 'jobs';
   const pathL = slugify(locationLabel || '') || 'india';
   const u = new URL(`https://www.naukri.com/${pathQ}-jobs-in-${pathL}`);
   u.searchParams.set('k', String(query || '').trim());
   if (locationLabel) u.searchParams.set('l', String(locationLabel).trim());
   u.searchParams.set('nignbevent_src', 'jobsearchDeskGNB');
-  // Prefer last-1-day results; strict maxAgeHours filter still applies client-side.
-  u.searchParams.set('nDate', '1');
+  // Match the site-side freshness window to the configured local age filter.
+  const freshnessDays = Math.max(1, Math.min(30, Math.ceil(Number(maxAgeHours || 24) / 24)));
+  u.searchParams.set('nDate', String(freshnessDays));
   return u.href;
 }
 
@@ -897,7 +898,7 @@ function isNaukriHomepageUrl(url) {
 async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
   // Production path: go straight to the search results URL.
   // Homepage form interaction is fragile (suggestors, overlays, SPA timing).
-  const directUrl = buildNaukriSearchUrl(q, loc);
+  const directUrl = buildNaukriSearchUrl(q, loc, c.maxAgeHours);
   console.info(JSON.stringify({
     search: q,
     location: loc || 'ALL',
@@ -1007,11 +1008,10 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
     );
   }
 
-  // Prefer Naukri's real Freshness -> Last 1 day UI control first.
-  // Only fall back to the public freshness URL parameter when the UI control
-  // is not exposed. The strict 6-hour parser below remains authoritative.
+  // Prefer Naukri's real freshness UI only when the URL does not already carry the requested age window.
+  // The strict local JOB_MAX_AGE_HOURS parser remains authoritative.
   let resultUrl = page.url();
-  const alreadyHasNDate = /(?:^|[?&])(?:nDate|freshness)=1(?:&|$)/i.test(resultUrl);
+  const alreadyHasNDate = /(?:^|[?&])(?:nDate|freshness)=\d+(?:&|$)/i.test(resultUrl);
   // Direct search URLs already request the last day. Avoid repeatedly opening
   // the Freshness UI on every tab unless the URL lacks that filter.
   let freshnessUiApplied = false;
@@ -1032,19 +1032,18 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
     resultUrl = page.url();
   }
 
-  // With one page per search there is no pagination to sort/short-circuit.
-  // Keep the UI sort behavior for users who explicitly enable page 2.
-  const singlePageSearch = Math.min(c.maxPagesPerSearch, 2) <= 1;
+  // Sort results by date before walking multiple pages, when Naukri exposes the control.
+  const singlePageSearch = c.maxPagesPerSearch <= 1;
   const sortedByDate = singlePageSearch ? false : await selectSortByDate(page);
   const freshnessFilterApplied =
-    freshnessUiApplied || /(?:^|[?&])(?:nDate|freshness)=1(?:&|$)/i.test(resultUrl);
+    freshnessUiApplied || /(?:^|[?&])(?:nDate|freshness)=\d+(?:&|$)/i.test(resultUrl);
   console.info(JSON.stringify({
     search: q,
     location: loc || 'ALL',
     sortedByDate,
     freshnessFilterApplied,
     maxAgeHours: c.maxAgeHours,
-    freshnessParam: 'nDate=1',
+    freshnessParam: new URL(resultUrl).searchParams.get('nDate') || 'site-default',
     resultUrl
   }));
   return {url: resultUrl, sortedByDate};
@@ -1112,7 +1111,7 @@ export async function searchJobs(page, c) {
     }));
     const visitedPages = new Set();
 
-    for (let pageNo = 1; pageNo <= Math.min(c.maxPagesPerSearch, 2) && url; pageNo++) {
+    for (let pageNo = 1; pageNo <= c.maxPagesPerSearch && url; pageNo++) {
       if (visitedPages.has(url)) break;
       visitedPages.add(url);
 
@@ -1211,11 +1210,11 @@ export async function searchJobs(page, c) {
       }
 
       // Respect the configured page cap for both date-sorted and ordinary searches.
-      const pageCap = Math.min(c.maxPagesPerSearch, 2);
+      const pageCap = c.maxPagesPerSearch;
       const next = pageNo < pageCap ? await nextPageUrl(tab, url) : null;
       if (!next) break;
       await tab.goto(next, {waitUntil: 'domcontentloaded', timeout: c.navigationTimeoutMs});
-      await tab.waitForTimeout(Math.min(c.pageDelayMs, 600));
+      await tab.waitForTimeout(Math.min(Math.max(Number(c.pageDelayMs) || 1500, 1500), 5000));
       url = tab.url();
     }
     return jobs;
