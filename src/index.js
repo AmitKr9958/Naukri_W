@@ -3,7 +3,6 @@ import {config,validateConfig} from './config.js';
 import {logger} from './logger.js';
 import {loadResume} from './resume.js';
 import {buildProfile,isTargetRole,scoreJob} from './matcher.js';
-import {analyzeJobs} from './ai.js';
 import {openNaukri,searchJobs} from './naukri.js';
 import {ensureLoggedIn} from './naukri-auth.js';
 import {loadSeen,saveSeen} from './state.js';
@@ -21,7 +20,7 @@ process.on('SIGTERM',()=>stopping=true);
 
 async function runOnce(){
   const start=Date.now();
-  logger.info({aiEnabled:config.aiEnabled,autoLogin:config.autoLogin,dryRun:config.dryRun,once,ignoreSeen},'Run started');
+  logger.info({aiEnabled:false,scoringMode:'rule-based',autoLogin:config.autoLogin,dryRun:config.dryRun,once,ignoreSeen},'Run started');
   const resume=await loadResume(config.resumePath);
   const profile=buildProfile(resume.text,config);
   const seen=await loadSeen();
@@ -36,20 +35,9 @@ async function runOnce(){
     const unseen=ignoreSeen?targetCandidates:targetCandidates.filter(j=>!seen.has(j.url));
     const alreadySeen=seenCandidates.length;
     const scored=unseen.map(j=>({...j,...scoreJob(j,profile)})).sort((a,b)=>b.score-a.score);
-    const aiEnabled=config.aiEnabled&&config.aiConsent;
-    let pool=aiEnabled?scored.slice(0,config.aiCandidateLimit):scored.slice(0,config.maxJobsPerRun);
-    logger.info({
-      freshCandidates:candidates.length,
-      targetRoleCandidates:targetCandidates.length,
-      rejectedRoleCandidates,
-      unseenCandidates:unseen.length,
-      alreadySeen,
-      ignoreSeen,
-      ruleScoreCandidates:scored.length,
-      aiEnabled,
-      aiPoolBeforeAnalysis:pool.length
-    },'Pipeline candidates');
-    if(aiEnabled)pool=await analyzeJobs(config,pool,resume.text);
+    // This watcher is intentionally rule-based only: no AI module import,
+    // model request, API key, or resume transmission to an AI provider.
+    const pool=scored.slice(0,config.maxJobsPerRun);
     logger.info({
       candidates:pool.map(j=>({
         title:j.title,
@@ -57,21 +45,13 @@ async function runOnce(){
         company:j.company,
         location:j.location,
         ruleScore:j.score,
-        finalScore:j.finalScore??j.score,
-        relevant:j.relevant,
-        aiFit:j.aiFit,
-        roleFit:j.roleFit,
-        reason:j.aiReason
+        finalScore:j.score
       })),
+      scoringMode:'rule-based',
       minimumScore:config.minMatchScore
     },'Candidate scoring diagnostics');
-    const ranked=pool.filter(j=>{
-      const score=j.finalScore??j.score;
-      // If AI is configured, only explicit positive evaluations may alert.
-      // A timeout/unavailable model is not an approval.
-      if(aiEnabled&&j.relevant!==true)return false;
-      return score>=config.minMatchScore;
-    }).sort((a,b)=>(b.finalScore??b.score)-(a.finalScore??a.score));
+    const ranked=pool.filter(j=>j.score>=config.minMatchScore)
+      .sort((a,b)=>b.score-a.score);
     const matches=ranked.slice(0,config.maxJobsPerRun);
     if(matches.length)await sendTelegram(config,matches);
 
@@ -94,9 +74,7 @@ async function runOnce(){
       alreadySeen,
       ignoreSeen,
       ruleScoreCandidates:scored.length,
-      aiCandidates:aiEnabled?pool.length:0,
-      aiRelevant:aiEnabled?pool.filter(j=>j.relevant===true).length:0,
-      aiUnavailable:aiEnabled?pool.filter(j=>j.relevant==null).length:0,
+      scoringMode:'rule-based',
       rejectedRoleCandidates,
       matches:matches.length,
       dryRun:config.dryRun,
