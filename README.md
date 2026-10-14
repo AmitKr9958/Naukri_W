@@ -1,6 +1,6 @@
 # Naukri Job Watcher
 
-A Windows-friendly Playwright job watcher for recent Naukri listings. It matches Power BI, BI, analytics, reporting, MIS, Power Platform, and Microsoft Fabric roles against a local resume; optionally evaluates the best candidates with an OpenAI-compatible AI endpoint; and sends qualified job links to Telegram.
+A Windows-friendly Playwright job watcher for recent Naukri listings. It matches Power BI, BI, analytics, reporting, MIS, Power Platform, and Microsoft Fabric roles against a local resume using deterministic rule-based scoring only; and can send qualified job links to Telegram.
 
 ## Safety and operating limits
 
@@ -8,8 +8,6 @@ A Windows-friendly Playwright job watcher for recent Naukri listings. It matches
 - It does not bypass CAPTCHA, MFA, bot checks, or site access controls. It uses the browser's default identity and security sandbox.
 - If Naukri blocks a request or asks for verification, stop and complete verification manually. Do not try to defeat the challenge.
 - Keep `.env`, `.naukri-profile/`, `state.json`, logs, and credentials out of Git.
-- AI is opt-in. Review the privacy note and set `AI_CONSENT=true` before enabling it.
-- Before AI analysis, the watcher redacts common email, phone, government-ID, salary/CTC, address, and postal-code patterns. Automated redaction is not perfect; review the resume and provider privacy terms before opting in.
 - The machine and internet must stay available for the Windows Task Scheduler watcher to run. It is not a cloud-hosted 24/7 service.
 
 ## Windows setup
@@ -18,7 +16,7 @@ A Windows-friendly Playwright job watcher for recent Naukri listings. It matches
 2. Run `npm install`.
 3. Copy `.env.example` to `.env`.
 4. Set `RESUME_PATH` to your local PDF, DOCX, or TXT resume. Configure your preferred locations and roles.
-5. For AI, configure `AI_BASE_URL`, `AI_MODEL`, and `AI_API_KEY` as appropriate. Never put API keys in Git or share them in logs.
+5. No AI provider or model configuration is needed; matching and scoring run locally in JavaScript.
 6. Run `npm run login` once and complete Naukri login interactively. The persistent profile is reused by the watcher.
 7. Configure Telegram bot token and chat ID if you plan to use alerts.
 8. Keep `DRY_RUN=true` during initial validation. Dry-run mode never sends Telegram messages or changes seen-job state.
@@ -31,7 +29,7 @@ After pulling the latest `main` branch, run the following from PowerShell in the
 .\scripts\validate-ready.ps1
 ```
 
-The validation script checks the Node.js version, installs dependencies, syntax-checks every project JavaScript file, runs all automated tests, verifies local configuration and resume extraction, and runs an AI smoke test with synthetic data only when AI is enabled and consented. It does **not** open Naukri, search jobs, change `DRY_RUN`, or send Telegram messages.
+The validation script checks the Node.js version, installs dependencies, syntax-checks every project JavaScript file, runs all automated tests, and verifies local configuration and resume extraction. It does not call an AI model. It does **not** open Naukri, search jobs, change `DRY_RUN`, or send Telegram messages.
 
 For the complete first test in one step, use `scripts/test-once.ps1` instead. It runs all of the above, then starts exactly one Naukri dry-run cycle. It refuses to start unless `DRY_RUN=true`; it does not send Telegram messages or change seen-job state. It may take several minutes and requires a valid saved Naukri browser session. If Naukri blocks access or requests verification, stop and complete the challenge manually.
 
