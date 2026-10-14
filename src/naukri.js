@@ -58,13 +58,29 @@ const JOB_CARD_SELECTOR = [
   'li:has(a[href*="job-listings-"])'
 ].join(',');
 
+/**
+ * Normalize a recognized posting-age label into approximate age in hours.
+ *
+ * Rules (documented, conservative):
+ * - "just now" / "moments ago" → 0
+ * - "few minutes" → 0.25
+ * - explicit N minutes/hours/days/weeks/months → converted to hours
+ * - "today" → 23 (worst-case same calendar day; always ≤ 24h and therefore
+ *   within a typical JOB_MAX_AGE_HOURS of 48, but never treated as brand-new)
+ * - "yesterday" → 24
+ * - unrecognized / empty → null (caller must NOT treat null as fresh)
+ *
+ * Never confuses experience ranges or contract durations with posting age;
+ * those are filtered by normalizeAgeLabel before this function runs.
+ */
 export function parseAgeHours(raw) {
   const s = String(raw || '').replace(/\s+/g, ' ').trim().toLowerCase();
   if (!s) return null;
   if (/just now|moments? ago/.test(s)) return 0;
-  // "Today" has no precise time and may mean up to 24 hours old. Do not
-  // pretend it is fresh enough for a strict six-hour window.
-  if (/\btoday\b/.test(s)) return null;
+  // "Today" means posted on the current calendar day (0–24h). Use a conservative
+  // upper bound of 23 hours so the listing remains eligible under the default
+  // 48-hour window while remaining distinguishable from "just now".
+  if (/\btoday\b/.test(s)) return 23;
   if (/yesterday/.test(s)) return 24;
   let m = s.match(/(\d+(?:\.\d+)?)\s*(?:minute|minutes|min|mins)\s*(?:ago)?/);
   if (m) return Number(m[1]) / 60;
@@ -72,11 +88,12 @@ export function parseAgeHours(raw) {
   m = s.match(/(\d+(?:\.\d+)?)\s*(?:hour|hours|hr|hrs)\s*(?:ago)?/);
   if (m) return Number(m[1]);
   if (/few\s+(?:hour|hours)/.test(s)) return 3;
-  m = s.match(/(\d+(?:\.\d+)?)\s*\+?\s*(?:day|days|d)\s*(?:ago)?/);
+  // Require end-of-string after unit so experience/contract text is not age.
+  m = s.match(/(\d+(?:\.\d+)?)\s*\+?\s*(?:day|days|d)(?:\s+ago)?\s*$/);
   if (m) return Number(m[1]) * 24;
-  m = s.match(/(\d+(?:\.\d+)?)\s*\+?\s*(?:week|weeks|wk|wks)\s*(?:ago)?/);
+  m = s.match(/(\d+(?:\.\d+)?)\s*\+?\s*(?:week|weeks|wk|wks)(?:\s+ago)?\s*$/);
   if (m) return Number(m[1]) * 168;
-  m = s.match(/(\d+(?:\.\d+)?)\s*(?:month|months|mo)\s*(?:ago)?/);
+  m = s.match(/(\d+(?:\.\d+)?)\s*(?:month|months|mo)(?:\s+ago)?\s*$/);
   if (m) return Number(m[1]) * 720;
   return null;
 }
@@ -231,7 +248,9 @@ async function collectJobCards(page) {
     const read = (card, href) => {
       if (!card || !href) return null;
       const raw = String(card.innerText || '').trim();
-      if (raw.length < 20 || raw.length > 8000 || !raw.split(/\n+/).some(ageLine)) return null;
+      // Accept cards even when the age label has not rendered yet; the caller
+      // will mark age as unknown and apply the conservative freshness policy.
+      if (raw.length < 12 || raw.length > 8000) return null;
       const first = selectors => {
         for (const selector of selectors) {
           const el = card.querySelector(selector);
@@ -242,11 +261,14 @@ async function collectJobCards(page) {
       };
       const lines = raw.split(/\n+/).map(x => x.trim()).filter(Boolean);
       const title = first(['a[href*="job-listings"]','a[href*="/job/"]']) || lines[0] || '';
+      // Require a plausible title so filter/pagination chrome is not treated as a job.
+      if (!title || title.length < 3) return null;
       const preferredPosted = first(['.job-post-day','.job-posted-date','.job-posted','[class*="job-post-day"]','[class*="posted"]']);
+      const hasAgeLabel = ageLine(preferredPosted) || lines.some(ageLine);
       const location = first(['.locWdth','.loc-wrap [title]','.location','.loc']);
       const company = first(['.comp-name','.companyInfo a','.companyInfo','.comp-name a']);
       const description = first(['.job-desc','.job-desc-container']) || raw;
-      return {href,raw,title,preferredPosted,location,company,description};
+      return {href,raw,title,preferredPosted,location,company,description,hasAgeLabel};
     };
 
     const output = [];
@@ -295,10 +317,14 @@ async function extractFreshCards(page, c) {
   const startedAt = Date.now();
   const fresh = [];
   let rejectedByFreshness = 0;
+  let rejectedIncomplete = 0;
+  let recognizedAgeCount = 0;
+  let unknownAgeCount = 0;
   const diagnostics = [];
   const cards = await collectJobCards(page);
   const seenCardUrls = new Set();
   const parsedAges = [];
+  const rawCardCount = cards.length;
 
   for (const entry of cards.slice(0, 50)) {
     const link = canonicalJobUrl(entry.href);
@@ -308,16 +334,32 @@ async function extractFreshCards(page, c) {
     const raw = String(entry.raw || '');
     const lines = raw.split('\n').map(x => x.trim()).filter(Boolean);
     const title = String(entry.title || '').trim() || lines[0] || '';
+    // Never invent a title; reject incomplete extractions instead.
+    if (!title || title.length < 3) {
+      rejectedIncomplete++;
+      continue;
+    }
     const preferredPosted = String(entry.preferredPosted || '').trim();
     const postedText = findPostedText(raw, preferredPosted);
     const ageHours = parseAgeHours(postedText);
 
-    if (ageHours != null) parsedAges.push(ageHours);
+    if (ageHours != null) {
+      parsedAges.push(ageHours);
+      recognizedAgeCount++;
+    } else {
+      unknownAgeCount++;
+    }
     if (diagnostics.length < 5) {
-      diagnostics.push({title, postedText: postedText || preferredPosted || 'NOT_FOUND', ageHours});
+      diagnostics.push({
+        title: title.slice(0, 80),
+        postedText: postedText || preferredPosted || 'NOT_FOUND',
+        ageHours,
+        agePolicy: ageHours == null ? 'unknown-rejected' : (ageHours > c.maxAgeHours ? 'too-old' : 'fresh')
+      });
     }
 
-    // Unknown posting age is never considered fresh.
+    // Unknown posting age is never considered fresh (conservative policy).
+    // "today" is normalized to 23h by parseAgeHours and therefore evaluated here.
     if (ageHours == null || ageHours > c.maxAgeHours) {
       rejectedByFreshness++;
       continue;
@@ -343,7 +385,12 @@ async function extractFreshCards(page, c) {
     fresh,
     diagnostics,
     rejectedByFreshness,
+    rejectedIncomplete,
+    recognizedAgeCount,
+    unknownAgeCount,
+    extractedCardCount: rawCardCount,
     uniqueCards: seenCardUrls.size,
+    uniqueJobs: seenCardUrls.size,
     parsedAges,
     newestAgeHours,
     oldestAgeHours,
@@ -1133,10 +1180,13 @@ export async function searchJobs(page, c) {
         throw new Error('Naukri session expired during search. Automatic login did not restore the session.');
       }
 
-      let cards = await recognizedJobCardCount(tab);
+      // initialUniqueListingLinks: unique job URLs before any scroll/retry (diagnostic only)
+      const initialUniqueListingLinks = await recognizedJobCardCount(tab);
+      let cards = initialUniqueListingLinks;
       if (!cards) {
         await tab.evaluate(() => window.scrollBy(0, 500)).catch(() => {});
-        await tab.waitForTimeout(Math.min(c.pageDelayMs, 600));
+        // Bounded wait for progressive rendering — not an arbitrary long sleep.
+        await tab.waitForTimeout(Math.min(Math.max(Number(c.pageDelayMs) || 600, 400), 900));
         cards = await recognizedJobCardCount(tab);
       }
       if (!cards) {
@@ -1144,67 +1194,87 @@ export async function searchJobs(page, c) {
           search: q,
           location: loc || 'ALL',
           page: pageNo,
-          cards: 0,
-          message: 'No Naukri job cards or job-listing links found after homepage form search',
-          url: tab.url()
+          pageUrl: tab.url(),
+          validResultsPage: false,
+          initialUniqueListingLinks: 0,
+          finalUniqueListingLinks: 0,
+          extractedCardCount: 0,
+          uniqueJobs: 0,
+          retryCount: 0,
+          message: 'No Naukri job cards or job-listing links found after homepage form search'
         }));
         break;
       }
 
-      const initialRecognizedListingLinks = cards;
       let extracted = await extractFreshCards(tab, c);
+      let retryCount = 0;
+      // Retry only when listing links exist but zero usable cards were extracted
+      // (common while Naukri finishes progressive rendering). Single bounded retry.
       if (cards > 0 && extracted.uniqueCards === 0) {
+        retryCount = 1;
         console.warn(JSON.stringify({
           search: q,
           location: loc || 'ALL',
           page: pageNo,
-          initialRecognizedListingLinks,
+          pageUrl: tab.url(),
+          initialUniqueListingLinks,
+          recognizedListingLinks: cards,
+          extractedCardCount: extracted.extractedCardCount,
+          uniqueJobs: extracted.uniqueCards,
+          retryCount,
           message: 'Listing links found but no cards extracted; waiting and retrying extraction once'
         }));
-        await tab.waitForTimeout(Math.min(Math.max(c.pageDelayMs, 500), 900));
+        await tab.evaluate(() => window.scrollBy(0, 400)).catch(() => {});
+        await tab.waitForTimeout(Math.min(Math.max(Number(c.pageDelayMs) || 700, 500), 1200));
         extracted = await extractFreshCards(tab, c);
       }
       // Recount after extraction/retry: Naukri may hydrate cards after the first link probe.
-      // Keeping the first count in a separate field makes timing-related changes visible.
       cards = await recognizedJobCardCount(tab);
+      const finalUniqueListingLinks = cards;
       const isRemoteSearch = /^remote$/i.test(String(loc).trim());
       const eligibleFresh = isRemoteSearch
         ? extracted.fresh.filter(job => remoteJobMatchesPreferredLocation(job, c.locations))
         : extracted.fresh;
       const rejectedByRemoteLocation = extracted.fresh.length - eligibleFresh.length;
 
-      if (!eligibleFresh.length) {
-        console.warn(JSON.stringify({
-          search: q,
-          location: loc || 'ALL',
-          page: pageNo,
-          cards: extracted.uniqueCards,
-          initialRecognizedListingLinks,
-          recognizedListingLinks: cards,
-          freshCards: eligibleFresh.length,
-          freshnessQualifiedCards: extracted.fresh.length,
-          rejectedByFreshness: extracted.rejectedByFreshness,
-          rejectedByRemoteLocation,
-          diagnostics: extracted.diagnostics
-        }));
-      }
-      console.info(JSON.stringify({
+      const pageMetrics = {
         search: q,
         location: loc || 'ALL',
         page: pageNo,
-        cards: extracted.uniqueCards,
-        initialRecognizedListingLinks,
-        recognizedListingLinks: cards,
+        pageUrl: tab.url(),
+        validResultsPage: finalUniqueListingLinks > 0 || extracted.uniqueCards > 0,
+        initialUniqueListingLinks,
+        finalUniqueListingLinks,
+        // Backward-compatible aliases used by earlier diagnostics on this branch
+        initialRecognizedListingLinks: initialUniqueListingLinks,
+        recognizedListingLinks: finalUniqueListingLinks,
+        extractedCardCount: extracted.extractedCardCount,
+        uniqueJobs: extracted.uniqueCards,
         uniqueCards: extracted.uniqueCards,
-        freshCards: eligibleFresh.length,
-        freshnessQualifiedCards: extracted.fresh.length,
+        retryCount,
+        retryOutcome: retryCount === 0 ? 'none' : (extracted.uniqueCards > 0 ? 'recovered' : 'still-empty'),
+        recognizedAgeCount: extracted.recognizedAgeCount,
+        unknownAgeCount: extracted.unknownAgeCount,
         rejectedByFreshness: extracted.rejectedByFreshness,
-        extractionMs: extracted.extractionMs,
+        rejectedIncomplete: extracted.rejectedIncomplete,
+        freshnessQualifiedCards: extracted.fresh.length,
         rejectedByRemoteLocation,
+        freshCards: eligibleFresh.length,
+        finalMatchesOnPage: eligibleFresh.length,
+        extractionMs: extracted.extractionMs,
         newestAgeHours: extracted.newestAgeHours,
         oldestAgeHours: extracted.oldestAgeHours,
         maxAgeHours: c.maxAgeHours
-      }));
+      };
+
+      if (!eligibleFresh.length) {
+        console.warn(JSON.stringify({
+          ...pageMetrics,
+          diagnostics: extracted.diagnostics,
+          message: 'No freshness-qualified eligible jobs on this page'
+        }));
+      }
+      console.info(JSON.stringify(pageMetrics));
 
       for (const job of eligibleFresh) jobs.push(job);
 
