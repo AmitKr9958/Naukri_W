@@ -186,6 +186,25 @@ export function findPostedText(raw, preferred) {
   return '';
 }
 
+/**
+ * Only stop date-sorted pagination when all extracted ages support the decision.
+ * Unknown ages are conservatively rejected as jobs, but they must not be
+ * interpreted as evidence that later pages are also too old.
+ */
+export function shouldStopPaginationForOldPage({
+  sortedByDate,
+  unknownAgeCount = 0,
+  newestAgeHours,
+  allParsedOlderThanMax = false,
+  maxAgeHours
+}) {
+  if (!sortedByDate || unknownAgeCount > 0) return false;
+  return Boolean(
+    allParsedOlderThanMax ||
+    (newestAgeHours != null && newestAgeHours > maxAgeHours)
+  );
+}
+
 // Remote jobs are only eligible when the listing itself mentions one of the configured target cities.
 export function remoteJobMatchesPreferredLocation(job, locations = []) {
   const text = String([job?.title, job?.company, job?.location, job?.description].filter(Boolean).join(' ')).toLowerCase();
@@ -1278,9 +1297,13 @@ export async function searchJobs(page, c) {
 
       for (const job of eligibleFresh) jobs.push(job);
 
-      if (sortedByDate &&
-          (extracted.allParsedOlderThanMax ||
-            (extracted.newestAgeHours != null && extracted.newestAgeHours > c.maxAgeHours))) {
+      if (shouldStopPaginationForOldPage({
+        sortedByDate,
+        unknownAgeCount: extracted.unknownAgeCount,
+        newestAgeHours: extracted.newestAgeHours,
+        allParsedOlderThanMax: extracted.allParsedOlderThanMax,
+        maxAgeHours: c.maxAgeHours
+      })) {
         console.info(JSON.stringify({
           search: q,
           location: loc || 'ALL',
