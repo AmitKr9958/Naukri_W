@@ -300,12 +300,30 @@ async function collectJobCards(page) {
     for (const link of document.querySelectorAll(linkSelector)) {
       const href = link.getAttribute('href');
       if (!href) continue;
-      let candidate = link;
-      let found = null;
+
+      // Small title wrappers often omit posted-age/location text. Walk upward
+      // to the largest reasonable ancestor that still represents only this job;
+      // stop before a broad results container includes multiple distinct jobs.
+      let candidate = link.parentElement;
+      let bestCard = null;
       for (let depth = 0; depth < 16 && candidate; depth++, candidate = candidate.parentElement) {
-        found = read(candidate, href);
-        if (found) break;
+        const rawText = String(candidate.innerText || '').trim();
+        if (!rawText || rawText.length > 8000) break;
+
+        const urls = new Set();
+        for (const item of candidate.querySelectorAll(linkSelector)) {
+          const itemHref = item.getAttribute('href');
+          if (!itemHref) continue;
+          try {
+            urls.add(new URL(itemHref, location.href).pathname.replace(/\/$/, ''));
+          } catch {}
+          if (urls.size > 1) break;
+        }
+        if (urls.size !== 1) break;
+        bestCard = candidate;
       }
+
+      const found = bestCard ? read(bestCard, href) : null;
       if (!found) continue;
       const key = new URL(href, location.href).pathname.replace(/\/$/, '');
       if (seen.has(key)) continue;
