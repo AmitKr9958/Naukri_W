@@ -30,7 +30,7 @@ export const config={
   pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,1500),
   // User-configured value is logged for diagnostics; src/naukri.js enforces one active search.
   searchConcurrency:positiveInt(process.env.SEARCH_CONCURRENCY,1),
-  searchBatchSize:positiveInt(process.env.JOB_SEARCH_BATCH_SIZE,3),
+  searchBatchSize:positiveInt(process.env.JOB_SEARCH_BATCH_SIZE,1),
   telegramToken:process.env.TELEGRAM_BOT_TOKEN||'',
   telegramChatId:process.env.TELEGRAM_CHAT_ID||'',
   aiEnabled:bool(process.env.AI_ENABLED,false),
