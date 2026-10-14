@@ -16,7 +16,7 @@ export const config={
   autoLogin:bool(process.env.NAUKRI_AUTO_LOGIN,false),
   naukriUsername:process.env.NAUKRI_USERNAME||'',
   naukriPassword:process.env.NAUKRI_PASSWORD||'',
-  maxAgeHours:Number(process.env.JOB_MAX_AGE_HOURS||6),
+  maxAgeHours:Number(process.env.JOB_MAX_AGE_HOURS||48),
   minExperienceYears:Number(process.env.JOB_MIN_EXPERIENCE_YEARS||5),
   locations:csv(process.env.JOB_LOCATIONS),
   roles:csv(process.env.JOB_ROLES),
@@ -24,8 +24,8 @@ export const config={
   minMatchScore:Number(process.env.MIN_MATCH_SCORE||60),
   maxJobsPerRun:positiveInt(process.env.MAX_JOBS_PER_RUN,15),
   aiCandidateLimit:positiveInt(process.env.AI_CANDIDATE_LIMIT,30),
-  // Default 1 page: for a strict 6h freshness window, page 2 is almost always stale.
-  maxPagesPerSearch:positiveInt(process.env.MAX_PAGES_PER_SEARCH,1),
+  // Scan multiple result pages; increase or decrease locally as needed (1-10).
+  maxPagesPerSearch:positiveInt(process.env.MAX_PAGES_PER_SEARCH,5),
   // Conservative pacing for Naukri; runtime enforces a minimum 1500ms between searches.
   pageDelayMs:positiveInt(process.env.PAGE_DELAY_MS,1500),
   // User-configured value is logged for diagnostics; src/naukri.js enforces one active search.
@@ -54,7 +54,7 @@ export function validateConfig(){
   if(!Number.isInteger(config.minExperienceYears)||config.minExperienceYears<0||config.minExperienceYears>40)m.push('JOB_MIN_EXPERIENCE_YEARS (integer 0-40)');
   if(!Number.isFinite(config.minMatchScore)||config.minMatchScore<0||config.minMatchScore>100)m.push('MIN_MATCH_SCORE (0-100)');
   if(!Number.isInteger(config.runEveryMinutes)||config.runEveryMinutes<10)m.push('RUN_EVERY_MINUTES (integer >= 10)');
-  if(!Number.isInteger(config.maxPagesPerSearch)||config.maxPagesPerSearch<1||config.maxPagesPerSearch>2)m.push('MAX_PAGES_PER_SEARCH (1-2)');
+  if(!Number.isInteger(config.maxPagesPerSearch)||config.maxPagesPerSearch<1||config.maxPagesPerSearch>10)m.push('MAX_PAGES_PER_SEARCH (1-10)');
   if(!Number.isInteger(config.searchConcurrency)||config.searchConcurrency<1||config.searchConcurrency>5)m.push('SEARCH_CONCURRENCY (1-5)');
   if(!Number.isInteger(config.searchBatchSize)||config.searchBatchSize<1||config.searchBatchSize>20)m.push('JOB_SEARCH_BATCH_SIZE (1-20)');
   if(!Number.isFinite(config.pageDelayMs)||config.pageDelayMs<0)m.push('PAGE_DELAY_MS (>= 0)');
