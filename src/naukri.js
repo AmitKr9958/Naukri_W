@@ -1012,7 +1012,7 @@ async function runSearchFromHomepage(page, c, q, loc, attempt = 0) {
   // The strict local JOB_MAX_AGE_HOURS parser remains authoritative.
   let resultUrl = page.url();
   const alreadyHasNDate = /(?:^|[?&])(?:nDate|freshness)=\d+(?:&|$)/i.test(resultUrl);
-  // Direct search URLs already request the last day. Avoid repeatedly opening
+  // Direct search URLs already request the configured age window. Avoid repeatedly opening
   // the Freshness UI on every tab unless the URL lacks that filter.
   let freshnessUiApplied = false;
   if (!alreadyHasNDate) {
