@@ -1077,12 +1077,17 @@ export async function searchJobs(page, c) {
     }
   }
 
-  // Same browser, multiple tabs. Cap concurrency to avoid Naukri rate/bot pressure.
-  const concurrency = Math.max(1, Math.min(Number(c.searchConcurrency) || 5, 5));
+  // Naukri is already challenging this account. Run only one search at a time,
+  // even if an old .env still requests 5 tabs. This is a conservative pacing
+  // measure, not a CAPTCHA bypass; verification still requires a human.
+  const requestedConcurrency = Math.max(1, Math.min(Number(c.searchConcurrency) || 1, 5));
+  const concurrency = 1;
   const context = page.context();
   console.info(JSON.stringify({
-    message: 'Parallel search starting',
+    message: 'Sequential search starting (safe mode)',
     tabs: concurrency,
+    requestedConcurrency,
+    concurrencyCapReason: 'Naukri security verification risk',
     tasks: tasks.length,
     queries: searchQueries,
     totalConfiguredQueries: allSearchQueries.length,
@@ -1260,7 +1265,7 @@ export async function searchJobs(page, c) {
         // Pace requests between search tasks, even when a user has configured
         // multiple tabs. This reduces bursts; it does not bypass site controls.
         if (!verificationRequired) {
-          const taskDelayMs = Math.min(Math.max(Number(c.pageDelayMs) || 1200, 1000), 5000);
+          const taskDelayMs = Math.min(Math.max(Number(c.pageDelayMs) || 1500, 1500), 5000);
           await tab.waitForTimeout(taskDelayMs).catch(() => {});
         }
       }
