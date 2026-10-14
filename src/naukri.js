@@ -217,10 +217,9 @@ export function remoteJobMatchesPreferredLocation(job, locations = []) {
   return false;
 }
 
-async function recognizedJobCardCount(page) {
-  // Naukri has used both "job-listings-<slug>" and "job-listings/<slug>"
-  // URL shapes. Count listing links first so unrelated wrappers/filters cannot
-  // hide a valid results page just because an old card class is present.
+async function uniqueListingLinkCount(page) {
+  // Count only actual job-listing anchors; keep fallback page/card recognition
+  // separate so diagnostics never label a wrapper count as a link count.
   const linkSelectors = [
     'a[href*="job-listings-"]',
     'a[href*="job-listings"]',
@@ -231,7 +230,13 @@ async function recognizedJobCardCount(page) {
   const listingHrefs = await page.locator(linkSelectors)
     .evaluateAll(elements => elements.map(element => element.getAttribute('href')).filter(Boolean))
     .catch(() => []);
-  const listingLinks = countUniqueListingLinks(listingHrefs);
+  return countUniqueListingLinks(listingHrefs);
+}
+
+async function recognizedJobCardCount(page) {
+  // Prefer unique listing links, then use card/header fallbacks only to decide
+  // whether this looks like a results page.
+  const listingLinks = await uniqueListingLinkCount(page);
   if (listingLinks) return listingLinks;
 
   // Fallback for layouts where card wrappers render before their anchors.
@@ -1200,7 +1205,7 @@ export async function searchJobs(page, c) {
       }
 
       // initialUniqueListingLinks: unique job URLs before any scroll/retry (diagnostic only)
-      const initialUniqueListingLinks = await recognizedJobCardCount(tab);
+      const initialUniqueListingLinks = await uniqueListingLinkCount(tab);
       let cards = initialUniqueListingLinks;
       if (!cards) {
         await tab.evaluate(() => window.scrollBy(0, 500)).catch(() => {});
@@ -1249,7 +1254,7 @@ export async function searchJobs(page, c) {
       }
       // Recount after extraction/retry: Naukri may hydrate cards after the first link probe.
       cards = await recognizedJobCardCount(tab);
-      const finalUniqueListingLinks = cards;
+      const finalUniqueListingLinks = await uniqueListingLinkCount(tab);
       const isRemoteSearch = /^remote$/i.test(String(loc).trim());
       const eligibleFresh = isRemoteSearch
         ? extracted.fresh.filter(job => remoteJobMatchesPreferredLocation(job, c.locations))
