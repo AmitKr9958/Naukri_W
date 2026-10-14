@@ -10,7 +10,7 @@ test('rotates query batches across successive cycles without losing coverage',()
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canonicalJobUrl,findPostedText,normalizeAgeLabel,nextSearchPageUrl,parseAgeHours,remoteJobMatchesPreferredLocation,selectSearchBatch} from '../src/naukri.js';
+import {canonicalJobUrl,countUniqueListingLinks,findPostedText,normalizeAgeLabel,nextSearchPageUrl,parseAgeHours,remoteJobMatchesPreferredLocation,selectSearchBatch} from '../src/naukri.js';
 
 test('finds Naukri Next page and avoids loops',()=>{
   const current='https://www.naukri.com/power-bi-developer-jobs-in-gurgaon';
@@ -60,6 +60,17 @@ test('remote jobs must mention one of the preferred cities',()=>{
   assert.equal(remoteJobMatchesPreferredLocation({title:'Remote Reporting Analyst',location:'Remote',description:'Must be based in Jaipur'},locations),true);
   assert.equal(remoteJobMatchesPreferredLocation({title:'Remote Data Analyst',location:'Remote',description:'Open to applicants anywhere in India'},locations),false);
   assert.equal(remoteJobMatchesPreferredLocation({title:'Remote BI Developer',location:'Remote',description:'Candidates in Bengaluru only'},locations),false);
+});
+
+test('counts distinct listing URLs instead of duplicate anchors',()=>{
+  assert.equal(countUniqueListingLinks([
+    '/job-listings-power-bi-developer-123?src=title',
+    'https://www.naukri.com/job-listings-power-bi-developer-123?src=company#details',
+    '/job-listings-data-analyst-456',
+    '/job-listings-reporting-789'
+  ]),3);
+  assert.equal(countUniqueListingLinks([]),0);
+  assert.equal(countUniqueListingLinks([null,'']),0);
 });
 
 test('canonical job URLs remove tracking parameters and fragments',()=>{
