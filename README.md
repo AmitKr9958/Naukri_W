@@ -36,18 +36,18 @@ For the complete first test in one step, use `scripts/test-once.ps1` instead. It
 ## Watcher settings
 
 - `RUN_EVERY_MINUTES`: schedule interval; minimum 10 minutes.
-- `JOB_MAX_AGE_HOURS`: maximum age for a job posting; default 6. Labels that say only "today" are treated as unknown and rejected because they cannot prove a listing is within six hours.
+- `JOB_MAX_AGE_HOURS`: maximum age for a job posting; default 48 hours. Labels that say only "today" remain unknown and are rejected because the watcher requires a parseable posting age.
 - `JOB_MIN_EXPERIENCE_YEARS`: reject listings whose explicit experience range ends below this value; default 5. Missing experience ranges are not automatically rejected.
 - `JOB_LOCATIONS`: preferred cities.
 - `JOB_ROLES` and `JOB_SEARCH_QUERIES`: roles to search and accept.
 - `MIN_MATCH_SCORE`: minimum final score for an alert.
 - `MAX_JOBS_PER_RUN`: maximum alerts in a cycle.
 - `AI_CANDIDATE_LIMIT`: maximum candidates evaluated by AI per cycle.
-- `MAX_PAGES_PER_SEARCH`: 1 or 2 pages per query/location.
+- `MAX_PAGES_PER_SEARCH`: 1-10 pages per query/location; default 5. The watcher follows Naukri's real Next link, stops on repeated URLs, and pauses at least 1500ms between page navigations.
 - `SEARCH_CONCURRENCY`: requested browser tabs. **Safe mode currently enforces one active Naukri search at a time regardless of this setting**, because concurrent tabs can trigger CAPTCHA/security checks.
 - `PAGE_DELAY_MS`: delay between search tasks. Runtime enforces at least 1500ms between tasks (default 1500ms); this reduces request bursts but cannot prevent or bypass a site-issued verification challenge.
 - `JOB_SEARCH_BATCH_SIZE`: number of query categories to search each cycle; default 3. With six queries, the two batches alternate on consecutive cycles. Rotation is in-memory only (no cursor file is written), so a restarted watcher begins with the first batch again.
-- Speed optimization: when one page per search is configured, the watcher skips redundant Freshness/Sort UI clicks because the direct URL already requests last-day results. The strict `JOB_MAX_AGE_HOURS` check remains enforced on extracted listings.
+- The Naukri URL freshness filter is derived from `JOB_MAX_AGE_HOURS` (rounded up to whole days), and the local age parser remains authoritative. Multi-page searches attempt to sort by date where Naukri exposes that control and stop when a date-sorted page is outside the freshness window.
 
 The watcher reports candidate titles before role filtering, scoring results, AI failures, and search diagnostics. If every search combination fails, the run now reports a failure instead of silently presenting an empty result as a successful search.
 
