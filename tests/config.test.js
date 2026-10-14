@@ -62,7 +62,9 @@ test('rejects invalid search concurrency and page cap',()=>{
   config.searchConcurrency=6;
   assert.throws(()=>validateConfig(),/SEARCH_CONCURRENCY/);
   setValidConfig();
-  config.maxPagesPerSearch=3;
+  config.maxPagesPerSearch=5;
+  assert.doesNotThrow(()=>validateConfig());
+  config.maxPagesPerSearch=11;
   assert.throws(()=>validateConfig(),/MAX_PAGES_PER_SEARCH/);
 });
 
