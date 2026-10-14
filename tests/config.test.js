@@ -66,13 +66,12 @@ test('rejects invalid search concurrency and page cap',()=>{
   assert.throws(()=>validateConfig(),/MAX_PAGES_PER_SEARCH/);
 });
 
-test('requires an AI key only when opted-in remote AI is enabled',()=>{
+test('AI endpoint settings do not gate the rule-based watcher',()=>{
   setValidConfig();
   config.aiEnabled=true;
   config.aiConsent=true;
   config.aiBaseUrl='https://openrouter.ai/api/v1';
-  assert.throws(()=>validateConfig(),/AI_API_KEY/);
-  config.aiConsent=false;
+  config.aiApiKey='';
   assert.doesNotThrow(()=>validateConfig());
 });
 
