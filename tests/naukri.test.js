@@ -8,7 +8,8 @@ import {
   nextSearchPageUrl,
   parseAgeHours,
   remoteJobMatchesPreferredLocation,
-  selectSearchBatch
+  selectSearchBatch,
+  shouldStopPaginationForOldPage
 } from '../src/naukri.js';
 import {isTargetRole, scoreJob, buildProfile} from '../src/matcher.js';
 
@@ -254,4 +255,34 @@ test('scoring respects minMatchScore gate and experience signals', () => {
   );
   assert.equal(unrelated.roleEligible, false);
   assert.equal(unrelated.score, 0);
+});
+
+
+test('unknown posting ages prevent premature date-sorted pagination stop', () => {
+  // A page may contain known old listings and other cards whose age labels have
+  // not rendered. Unknown ages are rejected as jobs, but are not proof that the
+  // following page is also old.
+  assert.equal(shouldStopPaginationForOldPage({
+    sortedByDate: true,
+    unknownAgeCount: 2,
+    newestAgeHours: 120,
+    allParsedOlderThanMax: true,
+    maxAgeHours: 48
+  }), false);
+
+  assert.equal(shouldStopPaginationForOldPage({
+    sortedByDate: true,
+    unknownAgeCount: 0,
+    newestAgeHours: 120,
+    allParsedOlderThanMax: true,
+    maxAgeHours: 48
+  }), true);
+
+  assert.equal(shouldStopPaginationForOldPage({
+    sortedByDate: false,
+    unknownAgeCount: 0,
+    newestAgeHours: 120,
+    allParsedOlderThanMax: true,
+    maxAgeHours: 48
+  }), false);
 });
