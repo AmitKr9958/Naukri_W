@@ -216,14 +216,13 @@ async function collectJobCards(page) {
       '[class*="styles_tuple" i]','article:has(a[href*="job-listings-"])',
       'div:has(> a[href*="job-listings-"])','li:has(a[href*="job-listings-"])'
     ].join(',');
-    const ageLine = value => {
-      const label = String(value || '').replace(/\u00a0/g, ' ').replace(/[•·|]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^posted\s*:?\s*/i, '').trim();
-      return /^(?:just now|moments? ago|few\s+(?:minutes?|hours?)(?:\s+ago)?|\d+(?:\.\d+)?\+?\s*(?:minutes?|mins?|hours?|hrs?|days?|d|weeks?|wks?|months?|mos?)\s+ago|yesterday|today)$/i.test(label);
-    };
     const read = (card, href) => {
       if (!card || !href) return null;
       const raw = String(card.innerText || '').trim();
-      if (raw.length < 20 || raw.length > 8000 || !raw.split(/\n+/).some(ageLine)) return null;
+      // Keep listing cards even when the age label is missing or rendered outside
+      // this wrapper. The caller still rejects unknown ages; retaining the card
+      // lets diagnostics distinguish extraction failures from freshness rejections.
+      if (raw.length < 20 || raw.length > 8000) return null;
       const first = selectors => {
         for (const selector of selectors) {
           const el = card.querySelector(selector);
